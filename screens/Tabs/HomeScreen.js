@@ -22,7 +22,7 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#dcdcdc', // Pinkish-red
+    backgroundColor: '#dcdcdc',
   },
   content: {
     flex: 1,
