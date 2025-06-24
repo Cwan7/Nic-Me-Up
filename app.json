@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "NicMeUp",
+    "slug": "NicMeUp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "jsEngine": "hermes",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.conor.nicmeup",
+      "googleServicesFile": "./GoogleService-Info.plist"
+    },
+    "plugins": [
+      "expo-web-browser"
+    ]
+  }
+}
