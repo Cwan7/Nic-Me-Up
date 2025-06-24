@@ -36,36 +36,34 @@ export default function ProfileScreen() {
     }
   };
 
-  const pickImage = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 1,
-    });
+const pickImage = async () => {
+  let result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaType?.IMAGE, // ✅ Updated line
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 1,
+  });
 
-    if (!result.canceled && result.assets) {
-      const uri = result.assets[0].uri;
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const storageRef = ref(storage, `profilePhotos/${user.uid}/${Date.now()}.jpg`);
-      await uploadBytes(storageRef, blob);
-      const downloadURL = await getDownloadURL(storageRef);
+  if (!result.canceled && result.assets) {
+    const uri = result.assets[0].uri;
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const storageRef = ref(storage, `profilePhotos/${user.uid}/${Date.now()}.jpg`);
+    await uploadBytes(storageRef, blob);
+    const downloadURL = await getDownloadURL(storageRef);
 
-      if (user) {
-        // Update Firestore
-        const userDocRef = doc(db, 'users', user.uid);
-        await setDoc(userDocRef, { photoURL: downloadURL }, { merge: true });
+    if (user) {
+      const userDocRef = doc(db, 'users', user.uid);
+      await setDoc(userDocRef, { photoURL: downloadURL }, { merge: true });
 
-        // Optionally update Authentication profile (not required if using Firestore)
-        await updateProfile(user, { photoURL: downloadURL }).catch((error) =>
-          console.error('Update Profile Error:', error)
-        );
+      await updateProfile(user, { photoURL: downloadURL }).catch((error) =>
+        console.error('Update Profile Error:', error)
+      );
 
-        setProfilePhoto(downloadURL);
-      }
+      setProfilePhoto(downloadURL);
     }
-  };
+  }
+};
 
   return (
     <View style={styles.container}>
