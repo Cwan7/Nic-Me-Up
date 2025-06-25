@@ -1,12 +1,12 @@
 import React from 'react';
 import { Text, View, StyleSheet } from 'react-native';
 
-export default function NicUpScreen() {
+export default function NicQuestScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.title}>NicUp Screen</Text>
-        <Text style={styles.text}>This is the NicUp feature screen. Functionality to be implemented.</Text>
+        <Text style={styles.title}>NicQuest Screen</Text>
+        <Text style={styles.text}>This is the NicQuest feature screen. Functionality to be implemented.</Text>
       </View>
     </View>
   );

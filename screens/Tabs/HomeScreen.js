@@ -3,16 +3,15 @@ import { Text, View, TouchableOpacity, StyleSheet } from 'react-native';
 import { auth } from '../../firebase';
 
 export default function HomeScreen({ navigation }) {
-  const handleNicUp = () => {
-    console.log('NicUp button pressed');
-    // Implement NicUp functionality later
+  const handleNicQuest = () => {
+    console.log('NicQuestbutton pressed');
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.content}>
-        <TouchableOpacity style={styles.nicUpButton} onPress={handleNicUp}>
-          <Text style={styles.text}>NicUp</Text>
+        <TouchableOpacity style={styles.nicQuestButton} onPress={handleNicQuest}>
+          <Text style={styles.text}>NicQuest</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -30,7 +29,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  nicUpButton: {
+  nicQuestButton: {
     marginVertical: 10,
     borderRadius: 2,
     backgroundColor: '#60a8b8', // Orange

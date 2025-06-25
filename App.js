@@ -10,7 +10,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import LoginScreen from './screens/LoginScreen';
 import CreateAccountScreen from './screens/CreateAccountScreen';
 import HomeScreen from './screens/Tabs/HomeScreen';
-import NicUpScreen from './screens/Tabs/NicUpScreen';
+import NicQuestScreen from './screens/Tabs/NicQuestScreen';
 import ProfileScreen from './screens/Tabs/ProfileScreen';
 
 const Stack = createStackNavigator();
@@ -54,16 +54,15 @@ const TabNavigator = ({ user }) => (
         } else if (route.name === 'Profile') {
           iconName = 'account-circle';
         }
-        // Only render icon for Home and Profile (NicUp keeps triangle placeholder)
         if (iconName) {
           return <MaterialIcons name={iconName} size={24} color={color} />;
         }
-        return null; // NicUp gets no icon
+        return null; 
       },
     })}
   >
     <Tab.Screen name="Home" component={HomeScreen} />
-    <Tab.Screen name="NicUp" component={NicUpScreen} />
+    <Tab.Screen name="NicQuest" component={NicQuestScreen} />
     <Tab.Screen name="Profile" component={ProfileScreen} />
   </Tab.Navigator>
 );
