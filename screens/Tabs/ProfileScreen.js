@@ -333,17 +333,17 @@ const styles = StyleSheet.create({
   },
   profileBorder2: {
     position: 'relative',
-    width: 112,
-    borderRadius: 56,
+    width: 110,
+    borderRadius: 55,
     borderWidth: 4,
     borderColor: '#fff',
   },
   profileBorder: {
     position: 'relative',
-    width: 104,
+    width: 102,
     borderRadius: 52,
-    borderWidth: 2,
-    borderColor: '#7b7b7b',
+    borderWidth: 1,
+    borderColor: '#b7b7b7',
   },
   profileImage: {
     width: 100,
