@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Text, View, TouchableOpacity, StyleSheet, Image, Alert, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { Text, View, TouchableOpacity, StyleSheet, Image, Alert, TextInput, ScrollView, KeyboardAvoidingView, Platform, Modal } from 'react-native';
 import { auth } from '../../firebase';
-import { signOut, updateProfile } from 'firebase/auth';
+import { signOut, updateProfile, reauthenticateWithCredential, EmailAuthProvider, updatePassword } from 'firebase/auth';
 import * as ImagePicker from 'expo-image-picker';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -17,6 +17,11 @@ export default function ProfileScreen() {
   const [strength, setStrength] = useState('6mg');
   const [flavors, setFlavors] = useState('All');
   const [notes, setNotes] = useState('Notes for NicQuest');
+  const [email, setEmail] = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [reenterPassword, setReenterPassword] = useState('');
   const storage = getStorage();
 
   useEffect(() => {
@@ -36,6 +41,7 @@ export default function ProfileScreen() {
           setUsername(user.displayName || '');
           setNotes('Notes for NicQuest');
         }
+        setEmail(user.email || ''); // Set initial email from auth
       }).catch((error) => console.error('Firestore fetch error:', error));
     }
   }, [user]);
@@ -96,19 +102,68 @@ export default function ProfileScreen() {
     setIsEditing(!isEditing);
   };
 
+  const reauthenticate = (currentPassword) => {
+    const credential = EmailAuthProvider.credential(user.email, currentPassword);
+    return reauthenticateWithCredential(user, credential);
+  };
+
   const saveProfile = async () => {
     if (user) {
-      const userDocRef = doc(db, 'users', user.uid);
-      await setDoc(userDocRef, {
-        username,
-        pouchType,
-        strength,
-        flavors,
-        notes,
-        photoURL: profilePhoto,
-      }, { merge: true });
-      setIsEditing(false);
-      console.log('Profile saved to Firestore');
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+
+        // Update email if changed
+        if (email && email !== user.email) {
+          await reauthenticate(currentPassword);
+          await updateEmail(user, email);
+          console.log('Email updated successfully');
+        }
+
+        // Update Firestore with all fields
+        await setDoc(userDocRef, {
+          username,
+          pouchType,
+          strength,
+          flavors,
+          notes,
+          photoURL: profilePhoto,
+        }, { merge: true });
+
+        setIsEditing(false);
+        console.log('Profile saved to Firestore');
+      } catch (error) {
+        console.error('Save Profile Error:', error.message);
+        Alert.alert('Error', error.message.includes('requires-recent-login') 
+          ? 'Please enter your current password to update email.'
+          : 'Failed to save profile. Check logs for details.');
+      }
+    }
+  };
+
+  const updateUserPassword = async () => {
+    if (newPassword !== reenterPassword) {
+      Alert.alert('Error', 'New passwords do not match.');
+      return;
+    }
+    if (!currentPassword || !newPassword) {
+      Alert.alert('Error', 'Please fill all fields.');
+      return;
+    }
+
+    try {
+      await reauthenticate(currentPassword);
+      await updatePassword(user, newPassword);
+      setModalVisible(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setReenterPassword('');
+      console.log('Password updated successfully');
+      Alert.alert('Success', 'Password has been updated.');
+    } catch (error) {
+      console.error('Password Update Error:', error.message);
+      Alert.alert('Error', error.message.includes('requires-recent-login') 
+        ? 'Incorrect current password.'
+        : 'Failed to update password. Check logs for details.');
     }
   };
 
@@ -121,7 +176,8 @@ export default function ProfileScreen() {
       <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.content}>
           <View style={styles.centeredProfile}>
-            <View style={styles.profileContainer}>
+            <View style={styles.profileBorder2}>
+            <View style={styles.profileBorder}>
               {profilePhoto ? (
                 <Image source={{ uri: profilePhoto }} style={styles.profileImage} />
               ) : (
@@ -134,6 +190,7 @@ export default function ProfileScreen() {
               <TouchableOpacity style={styles.editIcon} onPress={pickImage} activeOpacity={0.7}>
                 <MaterialIcons name="edit" size={20} color="#000" />
               </TouchableOpacity>
+            </View>
             </View>
           </View>
           <View style={styles.headerRow}>
@@ -149,6 +206,15 @@ export default function ProfileScreen() {
               value={username}
               onChangeText={setUsername}
               editable={isEditing}
+            />
+            <Text style={styles.label}>Email</Text>
+            <TextInput
+              style={[styles.value, isEditing && styles.editable]}
+              value={email}
+              onChangeText={setEmail}
+              editable={isEditing}
+              autoCapitalize="none"
+              keyboardType="email-address"
             />
             <Text style={styles.label}>Type of Pouches</Text>
             <TextInput
@@ -186,11 +252,67 @@ export default function ProfileScreen() {
               <Text style={styles.saveButtonText}>Save</Text>
             </TouchableOpacity>
           )}
+          <TouchableOpacity style={styles.link} onPress={() => setModalVisible(true)}>
+            <Text style={styles.linkText}>Update Password</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.button} onPress={handleSignOut}>
             <Text style={styles.buttonText}>Sign Out</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Update Password</Text>
+            <Text style={styles.label}>Current Password</Text>
+            <TextInput
+              style={[styles.value, styles.editable, styles.fullWidthInput]}
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+              secureTextEntry={true}
+              placeholder="Enter current password"
+              autoCapitalize="none"
+              selectionColor="#000"
+              placeholderTextColor="#888"
+            />
+            <Text style={styles.label}>New Password</Text>
+            <TextInput
+              style={[styles.value, styles.editable, styles.fullWidthInput]}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              secureTextEntry={true}
+              placeholder="Enter new password"
+              autoCapitalize="none"
+              selectionColor="#000"
+              placeholderTextColor="#888"
+            />
+            <Text style={styles.label}>Re-Enter New Password</Text>
+            <TextInput
+              style={[styles.value, styles.editable, styles.fullWidthInput]}
+              value={reenterPassword}
+              onChangeText={setReenterPassword}
+              secureTextEntry={true}
+              placeholder="Re-enter new password"
+              autoCapitalize="none"
+              selectionColor="#000"
+              placeholderTextColor="#888"
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.modalButton} onPress={updateUserPassword}>
+                <Text style={styles.modalButtonText}>Save</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalButtonCancel} onPress={() => setModalVisible(false)}>
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -206,17 +328,29 @@ const styles = StyleSheet.create({
   },
   centeredProfile: {
     alignItems: 'center',
-    marginTop: 20, // Fixed top margin to keep photo stationary
+    marginTop: 20,
     marginBottom: 30,
   },
-  profileContainer: {
+  profileBorder2: {
     position: 'relative',
-    width: 100,
+    width: 112,
+    borderRadius: 56,
+    borderWidth: 4,
+    borderColor: '#fff',
+  },
+  profileBorder: {
+    position: 'relative',
+    width: 104,
+    borderRadius: 52,
+    borderWidth: 2,
+    borderColor: '#7b7b7b',
   },
   profileImage: {
     width: 100,
     height: 100,
     borderRadius: 50,
+    borderWidth: 4,
+    borderColor: '#fff'
   },
   placeholder: {
     width: 100,
@@ -264,8 +398,8 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#000000',
+    fontWeight: '300',
+    color: '#3d3d3d',
     marginBottom: 5,
   },
   value: {
@@ -303,6 +437,70 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: '#fc0000',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  link: {
+    marginVertical: 10,
+    alignItems: 'center',
+  },
+  linkText: {
+    color: '#60a8b8',
+    fontSize: 16,
+    textDecorationLine: 'underline',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    padding: 20,
+    paddingBottom: 80, // Ensure bottom padding includes buttons
+    borderRadius: 10,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    marginHorizontal: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    color: '#000000',
+  },
+  fullWidthInput: {
+    flex: 1,
+    width: '100%',
+    minHeight: 40,
+    paddingVertical: 10,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 20,
+  },
+  modalButton: {
+    backgroundColor: '#60a8b8',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 4,
+    marginHorizontal: 10,
+    alignItems: 'center',
+    flex: 1,
+  },
+    modalButtonCancel: {
+    backgroundColor: '#cdcdcd',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 4,
+    marginHorizontal: 10,
+    alignItems: 'center',
+    flex: 1,
+  },
+  modalButtonText: {
+    color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },
