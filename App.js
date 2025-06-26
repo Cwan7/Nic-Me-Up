@@ -10,7 +10,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import LoginScreen from './screens/LoginScreen';
 import CreateAccountScreen from './screens/CreateAccountScreen';
 import HomeScreen from './screens/Tabs/HomeScreen';
-import NicQuestScreen from './screens/Tabs/NicQuestScreen';
+import SettingsScreen from './screens/Tabs/SettingsScreen';
 import ProfileScreen from './screens/Tabs/ProfileScreen';
 
 const Stack = createStackNavigator();
@@ -62,7 +62,7 @@ const TabNavigator = ({ user }) => (
     })}
   >
     <Tab.Screen name="Home" component={HomeScreen} />
-    <Tab.Screen name="NicQuest" component={NicQuestScreen} />
+    <Tab.Screen name="Settings" component={SettingsScreen} />
     <Tab.Screen name="Profile" component={ProfileScreen} />
   </Tab.Navigator>
 );
