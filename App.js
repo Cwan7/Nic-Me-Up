@@ -53,6 +53,8 @@ const TabNavigator = ({ user }) => (
           iconName = 'home';
         } else if (route.name === 'Profile') {
           iconName = 'account-circle';
+        } else if (route.name === 'Settings') {
+          iconName = 'settings';
         }
         if (iconName) {
           return <MaterialIcons name={iconName} size={24} color={color} />;
