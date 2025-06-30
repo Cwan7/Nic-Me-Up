@@ -2,11 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, View, StyleSheet, TouchableOpacity } from 'react-native';
+import { Text, View, StyleSheet, TouchableOpacity, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { auth } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import LoginScreen from './screens/LoginScreen';
 import CreateAccountScreen from './screens/CreateAccountScreen';
 import HomeScreen from './screens/Tabs/HomeScreen';
@@ -15,6 +18,27 @@ import ProfileScreen from './screens/Tabs/ProfileScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+
+// Register background notification handler
+async function registerBackgroundHandler() {
+  Notifications.registerTaskAsync('background-notification', async ({ data, experienceId }) => {
+    console.log('Received background notification:', data);
+    if (data?.type === 'pouchRequest') {
+      console.log('Someone needs a pouch nearby:', data.userId);
+      // Example: Show alert when app opens
+      Alert.alert('Pouch Request', `User ${data.userId} needs a pouch nearby!`);
+    }
+    return Promise.resolve();
+  });
+}
 
 const Header = ({ user }) => {
   const navigation = useNavigation();
@@ -39,14 +63,14 @@ const TabNavigator = ({ user }) => (
       header: () => <Header user={user} />,
       tabBarShowLabel: true,
       tabBarStyle: {
-        backgroundColor: '#fff', // White
+        backgroundColor: '#fff',
         borderTopWidth: 1,
-        borderTopColor: '#dcdcdc', // Light gray
+        borderTopColor: '#dcdcdc',
       },
-      tabBarActiveTintColor: '#60a8b8', // Teal
-      tabBarInactiveTintColor: '#000000', // Black
-      tabBarActiveBackgroundColor: '#fff', // White
-      tabBarInactiveBackgroundColor: '#fff', // White
+      tabBarActiveTintColor: '#60a8b8',
+      tabBarInactiveTintColor: '#000000',
+      tabBarActiveBackgroundColor: '#fff',
+      tabBarInactiveBackgroundColor: '#fff',
       tabBarIcon: ({ focused, color }) => {
         let iconName;
         if (route.name === 'Home') {
@@ -59,7 +83,7 @@ const TabNavigator = ({ user }) => (
         if (iconName) {
           return <MaterialIcons name={iconName} size={24} color={color} />;
         }
-        return null; 
+        return null;
       },
     })}
   >
@@ -75,9 +99,60 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
+      if (user) {
+        registerForPushNotificationsAsync();
+        if (Platform.OS === 'ios') {
+          registerBackgroundHandler();
+        }
+      }
     });
     return () => unsubscribe();
   }, []);
+
+  async function registerForPushNotificationsAsync() {
+    if (!Device.isDevice) {
+      Alert.alert('Notifications', 'Must use a physical device for push notifications.');
+      return;
+    }
+
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    console.log('Existing permission status:', existingStatus);
+
+    let finalStatus = existingStatus;
+
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync({
+        ios: {
+          allowAlert: true,
+          allowBadge: true,
+          allowSound: true,
+          allowProvisional: true,
+        },
+      });
+      finalStatus = status;
+      console.log('Requested permission status:', status);
+    }
+
+    // Always attempt to get the token, even if status is denied, to debug
+    try {
+      const token = (await Notifications.getExpoPushTokenAsync({ projectId: Constants.expoConfig.extra?.eas?.projectId })).data;
+      console.log('Expo Push Token:', token);
+    } catch (error) {
+      console.log('Error getting push token:', error.message || error);
+    }
+
+    if (finalStatus !== 'granted') {
+      Alert.alert(
+        'Notification Permission',
+        'NicMeUp would like to send you notifications for updates and reminders. Please allow notifications to stay connected!',
+        [
+          { text: 'Deny', style: 'cancel' },
+          { text: 'Allow', onPress: () => Notifications.requestPermissionsAsync() },
+        ]
+      );
+      return;
+    }
+  }
 
   return (
     <NavigationContainer>
@@ -111,19 +186,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-end',
     padding: 8,
-    height: 50, // Reduced height
-    backgroundColor: '#fff', // White
+    height: 50,
+    backgroundColor: '#fff',
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#000000', // Black
+    color: '#000000',
     paddingBottom: 20,
   },
   headerUser: {
     fontSize: 20,
     paddingBottom: 10,
     fontWeight: 'bold',
-    color: '#60a8b8', // Black
+    color: '#60a8b8',
   },
 });

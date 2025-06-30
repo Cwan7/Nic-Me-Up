@@ -8,10 +8,32 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.conor.nicmeup",
-      "googleServicesFile": "./GoogleService-Info.plist"
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
+      }
     },
     "plugins": [
-      "expo-web-browser"
-    ]
+      "expo-web-browser",
+      "expo-notifications"
+    ],
+    "notification": {
+      "ios": {
+        "displayInForeground": true,
+        "remoteNotification": true,
+        "allowAlert": true,
+        "allowBadge": true,
+        "allowSound": true,
+        "allowProvisional": true
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "54b5732a-090a-4f7d-88fd-46fd3fd1e649"
+      }
+    },
+    "owner": "cwan7"
   }
 }
