@@ -5,35 +5,40 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "jsEngine": "hermes",
+    "icon": "./assets/Logo3.png",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.conor.nicmeup",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "UIBackgroundModes": [
-          "remote-notification"
-        ]
+          "remote-notification", "fetch"
+        ],
+        "ITSAppUsesNonExemptEncryption": false,
+        "UILaunchStoryboardName": "LaunchScreen"
       }
     },
     "plugins": [
       "expo-web-browser",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/Logo3.png",
+          "mode": "production",
+          "displayInForeground": true,
+          "remoteNotification": true
+        }
+      ]
     ],
-    "notification": {
-      "ios": {
-        "displayInForeground": true,
-        "remoteNotification": true,
-        "allowAlert": true,
-        "allowBadge": true,
-        "allowSound": true,
-        "allowProvisional": true
-      }
-    },
     "extra": {
       "eas": {
         "projectId": "54b5732a-090a-4f7d-88fd-46fd3fd1e649"
       }
     },
-    "owner": "cwan7"
+    "owner": "cwan7",
+    "android": {
+      "package": "com.conor.nicmeup"
+    }
   }
 }

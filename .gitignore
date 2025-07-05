@@ -3,7 +3,6 @@
 # dependencies
 node_modules/
 .env
-GoogleService-Info.plist
 
 # Expo
 .expo/
@@ -37,4 +36,4 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
-GoogleService-Info.plist
+# GoogleService-Info.plist
