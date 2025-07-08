@@ -1,13 +1,12 @@
 import React from 'react';
 import { Text, View, TouchableOpacity, StyleSheet } from 'react-native';
-import { auth } from '../../firebase';
 
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen({ navigation, user }) {
   const handleNicQuest = () => {
     console.log('☎️ NicQuest button pressed');
   };
 
-  const userName = auth.currentUser?.displayName || 'Friend';
+  const userName = user?.displayName || 'Friend';
 
   return (
     <View style={styles.container}>

@@ -84,7 +84,8 @@ const Header = ({ user }) => {
 };
 
 const TabNavigator = ({ user }) => {
-  const Tab = createBottomTabNavigator(); // Define Tab here
+  const Tab = createBottomTabNavigator();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -116,9 +117,15 @@ const TabNavigator = ({ user }) => {
         },
       })}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Settings" component={SettingsScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Home">
+        {(props) => <HomeScreen {...props} user={user} />}
+      </Tab.Screen>
+      <Tab.Screen name="Settings">
+        {(props) => <SettingsScreen {...props} user={user} />}
+      </Tab.Screen>
+      <Tab.Screen name="Profile">
+        {(props) => <ProfileScreen {...props} user={user} />}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 };
