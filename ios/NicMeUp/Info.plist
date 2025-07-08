@@ -89,5 +89,11 @@
     <string>Light</string>
     <key>UIViewControllerBasedStatusBarAppearance</key>
     <false/>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Allow NicMeUp to access your location for NicQuest and NicAssist.</string>
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>Allow NicMeUp to access your location even when the app is in the background for enhanced NicQuest features.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>Allow NicMeUp to access your location at all times for the best NicQuest experience.</string>
   </dict>
 </plist>
