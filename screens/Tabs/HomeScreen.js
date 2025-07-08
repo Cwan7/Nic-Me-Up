@@ -4,7 +4,7 @@ import { auth } from '../../firebase';
 
 export default function HomeScreen({ navigation }) {
   const handleNicQuest = () => {
-    console.log('NicQuest button pressed');
+    console.log('☎️ NicQuest button pressed');
   };
 
   const userName = auth.currentUser?.displayName || 'Friend';

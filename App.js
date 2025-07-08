@@ -1,5 +1,7 @@
+import { auth, db } from './firebase';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
+import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 import React, { useEffect, useState, useRef } from 'react';
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
@@ -8,8 +10,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text, View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { auth } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import LoginScreen from './screens/LoginScreen';
@@ -17,6 +19,7 @@ import CreateAccountScreen from './screens/CreateAccountScreen';
 import HomeScreen from './screens/Tabs/HomeScreen';
 import SettingsScreen from './screens/Tabs/SettingsScreen';
 import ProfileScreen from './screens/Tabs/ProfileScreen';
+
 
 // Define the background task
 const BACKGROUND_NOTIFICATION_TASK = 'background-notification';
@@ -124,6 +127,8 @@ const Stack = createStackNavigator();
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const [locationPermission, setLocationPermission] = useState(null);
+  
 
 useEffect(() => {
   console.log('Setting up user and notifications');
@@ -132,6 +137,33 @@ useEffect(() => {
     console.log('Auth state changed, user:', user?.uid);
     setUser(user);
     console.log('User set:', user?.displayName || 'No display name');
+    if (user && !locationPermission) {
+      // Request location permissions
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        console.log('Location permission granted');
+        const location = await Location.getCurrentPositionAsync({});
+        console.log('User location:', location.coords);
+        // Store location in Firestore
+        const userDocRef = doc(db, 'users', user.uid);
+        await setDoc(userDocRef, {
+          location: {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            timestamp: new Date().toISOString()
+          }
+        }, { merge: true });
+        setLocationPermission(status);
+      } else {
+        console.log('Location permission denied');
+        Alert.alert(
+          'Location Permission Needed',
+          'NicMeUp requires location access to find nearby users for NicQuest. Please enable it in Settings under Privacy > Location Services.',
+          [{ text: 'OK', onPress: () => console.log('User instructed to enable location') }]
+        );
+        setLocationPermission(status);
+      }
+    }
     if (user) {
       await registerForPushNotificationsAsync();
       if (Platform.OS === 'ios' && !backgroundTask) {
@@ -140,7 +172,7 @@ useEffect(() => {
       }
     }
   });
-  return () => unsubscribe(); // Only unsubscribe auth, keep task registered
+  return () => unsubscribe();
 }, []);
 
 const hasHandledInitialNotification = useRef(false);

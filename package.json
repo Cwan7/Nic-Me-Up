@@ -30,7 +30,8 @@
     "react-native-screens": "^4.11.1",
     "expo-dev-client": "~5.2.2",
     "react-native-gesture-handler": "~2.24.0",
-    "expo-task-manager": "~13.1.6"
+    "expo-task-manager": "~13.1.6",
+    "expo-location": "~18.1.6"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
