@@ -148,7 +148,7 @@ export default function App() {
           const userDoc = await getDoc(userDocRef);
           await setDoc(userDocRef, {
             flavors: userDoc.exists() && userDoc.data().flavors ? userDoc.data().flavors : "Random",
-            nicQuestDistance: userDoc.exists() && userDoc.data().nicQuestDistance ? userDoc.data().nicQuestDistance : "200ft",
+            nicQuestDistance: userDoc.exists() && userDoc.data().nicQuestDistance ? userDoc.data().nicQuestDistance : 200,
             notes: userDoc.exists() && userDoc.data().notes ? userDoc.data().notes : "Notes for NicQuest",
             photoURL: userDoc.exists() && userDoc.data().photoURL ? userDoc.data().photoURL : null,
             pouchType: userDoc.exists() && userDoc.data().pouchType ? userDoc.data().pouchType : "Random",

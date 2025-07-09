@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Text, View, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import { auth, db } from '../../firebase'; 
+import { auth, db } from '../../firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 export default function SettingsScreen() {
-  const [distance, setDistance] = useState('200ft');
+  const [distance, setDistance] = useState(200); // Store as number
   const [showPicker, setShowPicker] = useState(false);
 
   // Load saved settings from Firestore on mount
@@ -16,7 +16,7 @@ export default function SettingsScreen() {
         const userDoc = await getDoc(doc(db, 'users', user.uid));
         if (userDoc.exists()) {
           const data = userDoc.data();
-          if (data.nicQuestDistance) {
+          if (typeof data.nicQuestDistance === 'number') {
             setDistance(data.nicQuestDistance);
           }
         }
@@ -51,10 +51,10 @@ export default function SettingsScreen() {
             <View style={styles.labelRow}>
               <Text style={styles.settingLabel}>Distance to a NicAssist</Text>
               <TouchableOpacity
-                onPress={() => setShowPicker(!showPicker)} // Only toggle picker
+                onPress={() => setShowPicker(!showPicker)}
                 style={styles.valueButton}
               >
-                <Text style={styles.selectedValue}>{distance}</Text>
+                <Text style={styles.selectedValue}>{`${distance}ft`}</Text>
               </TouchableOpacity>
             </View>
 
@@ -66,17 +66,17 @@ export default function SettingsScreen() {
                   onValueChange={(itemValue) => {
                     setDistance(itemValue);
                     setShowPicker(false);
-                    saveSettings(itemValue); // Pass the new value directly
+                    saveSettings(itemValue);
                   }}
                   dropdownIconColor="#000"
                 >
-                  <Picker.Item label="100ft" value="100ft" />
-                  <Picker.Item label="150ft" value="150ft" />
-                  <Picker.Item label="200ft" value="200ft" />
-                  <Picker.Item label="250ft" value="250ft" />
-                  <Picker.Item label="300ft" value="300ft" />
-                  <Picker.Item label="400ft" value="400ft" />
-                  <Picker.Item label="500ft" value="500ft" />
+                  <Picker.Item label="100ft" value={100} />
+                  <Picker.Item label="150ft" value={150} />
+                  <Picker.Item label="200ft" value={200} />
+                  <Picker.Item label="250ft" value={250} />
+                  <Picker.Item label="300ft" value={300} />
+                  <Picker.Item label="400ft" value={400} />
+                  <Picker.Item label="500ft" value={500} />
                 </Picker>
               </View>
             )}
