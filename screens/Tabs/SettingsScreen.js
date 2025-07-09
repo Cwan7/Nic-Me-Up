@@ -1,16 +1,52 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Text,
   View,
   StyleSheet,
   TouchableOpacity,
   Platform,
+  Alert
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
+import { auth, db } from '../../firebase'; 
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 export default function SettingsScreen() {
   const [distance, setDistance] = useState('200ft');
   const [showPicker, setShowPicker] = useState(false);
+
+  // Load saved settings from Firestore on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      const user = auth.currentUser;
+      if (user) {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          if (data.nicQuestDistance) {
+            setDistance(data.nicQuestDistance);
+          }
+        }
+      }
+    };
+    loadSettings();
+  }, []);
+
+  // Save settings to Firestore when distance changes
+  const saveSettings = async () => {
+    const user = auth.currentUser;
+    if (user) {
+      try {
+        await setDoc(doc(db, 'users', user.uid), {
+          nicQuestDistance: distance
+        }, { merge: true });
+        Alert.alert('Success', 'Settings saved!');
+      } catch (error) {
+        console.error('Error saving settings:', error);
+        Alert.alert('Error', 'Failed to save settings. Please try again.');
+      }
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -22,7 +58,7 @@ export default function SettingsScreen() {
             <View style={styles.labelRow}>
               <Text style={styles.settingLabel}>Distance to a NicAssist</Text>
               <TouchableOpacity
-                onPress={() => setShowPicker(!showPicker)}
+                onPress={() => setShowPicker(!showPicker)} // Only toggle picker
                 style={styles.valueButton}
               >
                 <Text style={styles.selectedValue}>{distance}</Text>
@@ -37,6 +73,7 @@ export default function SettingsScreen() {
                   onValueChange={(itemValue) => {
                     setDistance(itemValue);
                     setShowPicker(false);
+                    saveSettings(); // Save only on selection change
                   }}
                   dropdownIconColor="#000"
                 >

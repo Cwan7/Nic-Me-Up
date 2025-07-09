@@ -1,3 +1,5 @@
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
@@ -10,8 +12,6 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text, View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import LoginScreen from './screens/LoginScreen';
@@ -19,7 +19,6 @@ import CreateAccountScreen from './screens/CreateAccountScreen';
 import HomeScreen from './screens/Tabs/HomeScreen';
 import SettingsScreen from './screens/Tabs/SettingsScreen';
 import ProfileScreen from './screens/Tabs/ProfileScreen';
-
 
 // Define the background task
 const BACKGROUND_NOTIFICATION_TASK = 'background-notification';
@@ -52,7 +51,6 @@ Notifications.setNotificationHandler({
 async function registerBackgroundHandler() {
   try {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_NOTIFICATION_TASK);
-
     console.log('Is task registered:', isRegistered);
     if (!isRegistered) {
       await Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK);
@@ -85,7 +83,6 @@ const Header = ({ user }) => {
 
 const TabNavigator = ({ user }) => {
   const Tab = createBottomTabNavigator();
-
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -130,74 +127,134 @@ const TabNavigator = ({ user }) => {
   );
 };
 
-const Stack = createStackNavigator(); 
+const Stack = createStackNavigator();
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [locationPermission, setLocationPermission] = useState(null);
-  
 
-useEffect(() => {
-  console.log('Setting up user and notifications');
-  let backgroundTask;
-  const unsubscribe = onAuthStateChanged(auth, async (user) => {
-    console.log('Auth state changed, user:', user?.uid);
-    setUser(user);
-    console.log('User set:', user?.displayName || 'No display name');
-    if (user && !locationPermission) {
-      // Request location permissions
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        console.log('Location permission granted');
-        const location = await Location.getCurrentPositionAsync({});
-        console.log('User location:', location.coords);
-        // Store location in Firestore
-        const userDocRef = doc(db, 'users', user.uid);
-        await setDoc(userDocRef, {
-          location: {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-            timestamp: new Date().toISOString()
+  useEffect(() => {
+    console.log('Setting up user and notifications');
+    let backgroundTask;
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('Auth state changed, user:', user?.uid);
+      setUser(user);
+      console.log('User set:', user?.displayName || 'No display name');
+
+      // Initialize Firestore fields for the user
+      if (user) {
+        try {
+          const userDocRef = doc(db, 'users', user.uid);
+          const userDoc = await getDoc(userDocRef);
+          await setDoc(userDocRef, {
+            flavors: userDoc.exists() && userDoc.data().flavors ? userDoc.data().flavors : "Random",
+            nicQuestDistance: userDoc.exists() && userDoc.data().nicQuestDistance ? userDoc.data().nicQuestDistance : "200ft",
+            notes: userDoc.exists() && userDoc.data().notes ? userDoc.data().notes : "Notes for NicQuest",
+            photoURL: userDoc.exists() && userDoc.data().photoURL ? userDoc.data().photoURL : null,
+            pouchType: userDoc.exists() && userDoc.data().pouchType ? userDoc.data().pouchType : "Random",
+            strength: userDoc.exists() && userDoc.data().strength ? userDoc.data().strength : "3mg-6mg"
+            // Placeholder for future fields
+          }, { merge: true });
+          console.log('Firestore user document initialized or updated for UID:', user.uid);
+        } catch (error) {
+          console.error('Error initializing Firestore document:', error);
+        }
+      }
+
+      // Handle location permissions separately
+      if (user && !locationPermission) {
+        console.log('Requesting location permission');
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        console.log('Location permission status:', status);
+        if (status === 'granted') {
+          console.log('Location permission granted, fetching location');
+          const location = await Location.getCurrentPositionAsync({});
+          console.log('User location fetched:', location.coords);
+          const userDocRef = doc(db, 'users', user.uid);
+          try {
+            await setDoc(userDocRef, {
+              location: {
+                latitude: location.coords.latitude,
+                longitude: location.coords.longitude,
+                timestamp: new Date().toISOString()
+              }
+            }, { merge: true });
+            console.log('Location updated in Firestore for UID:', user.uid);
+            setLocationPermission(status);
+          } catch (error) {
+            console.error('Error updating location in Firestore:', error);
           }
-        }, { merge: true });
-        setLocationPermission(status);
-      } else {
-        console.log('Location permission denied');
-        Alert.alert(
-          'Location Permission Needed',
-          'NicMeUp requires location access to find nearby users for NicQuest. Please enable it in Settings under Privacy > Location Services.',
-          [{ text: 'OK', onPress: () => console.log('User instructed to enable location') }]
-        );
-        setLocationPermission(status);
+        } else {
+          console.log('Location permission denied');
+          Alert.alert(
+            'Location Permission Needed',
+            'NicMeUp requires location access to find nearby users for NicQuest. Please enable it in Settings under Privacy > Location Services.',
+            [{ text: 'OK', onPress: () => console.log('User instructed to enable location') }]
+          );
+          setLocationPermission(status);
+        }
+      }
+
+      if (user) {
+        await registerForPushNotificationsAsync();
+        if (Platform.OS === 'ios' && !backgroundTask) {
+          backgroundTask = await registerBackgroundHandler();
+          console.log('Background task registration result:', backgroundTask);
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const hasHandledInitialNotification = useRef(false);
+
+  useEffect(() => {
+    async function checkInitialNotification() {
+      if (hasHandledInitialNotification.current) return;
+
+      const response = await Notifications.getLastNotificationResponseAsync();
+
+      if (response) {
+        const timestamp = new Date().toISOString();
+        const { data } = response.notification.request.content;
+
+        console.log(`[${timestamp}] Initial notification tapped (cold start):`, data);
+
+        if (data?.type === 'NicQuest') {
+          hasHandledInitialNotification.current = true; // ✅ prevent re-trigger
+          Alert.alert(
+            `NicQuest from ${data.userId}`,
+            'users profile photo here',
+            [
+              {
+                text: 'NicAssist',
+                onPress: () => console.log(`✅ NicAssist selected for user ${data.userId}`),
+                style: 'default',
+              },
+              {
+                text: 'Decline',
+                onPress: () => console.log(`❌ Decline NicQuest for user ${data.userId}`),
+                style: 'cancel',
+              },
+            ],
+            { cancelable: true }
+          );
+        }
       }
     }
+
     if (user) {
-      await registerForPushNotificationsAsync();
-      if (Platform.OS === 'ios' && !backgroundTask) {
-        backgroundTask = await registerBackgroundHandler();
-        console.log('Background task registration result:', backgroundTask);
-      }
+      checkInitialNotification();
     }
-  });
-  return () => unsubscribe();
-}, []);
+  }, [user]);
 
-const hasHandledInitialNotification = useRef(false);
-
-useEffect(() => {
-  async function checkInitialNotification() {
-    if (hasHandledInitialNotification.current) return;
-
-    const response = await Notifications.getLastNotificationResponseAsync();
-
-    if (response) {
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const timestamp = new Date().toISOString();
+      console.log(`[${timestamp}] Notification tapped:`, response.notification.request.content.data);
       const { data } = response.notification.request.content;
-
-      console.log(`[${timestamp}] Initial notification tapped (cold start):`, data);
-
       if (data?.type === 'NicQuest') {
-        hasHandledInitialNotification.current = true; // ✅ prevent re-trigger
+        console.log(`[${timestamp}] Tapped NicQuest:`, data.userId);
         Alert.alert(
           `NicQuest from ${data.userId}`,
           'users profile photo here',
@@ -216,42 +273,9 @@ useEffect(() => {
           { cancelable: true }
         );
       }
-    }
-  }
-
-  if (user) {
-    checkInitialNotification();
-  }
-}, [user]);
-
-useEffect(() => {
-  const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-    const timestamp = new Date().toISOString();
-    console.log(`[${timestamp}] Notification tapped:`, response.notification.request.content.data);
-    const { data } = response.notification.request.content;
-    if (data?.type === 'NicQuest') {
-      console.log(`[${timestamp}] Tapped NicQuest:`, data.userId);
-      Alert.alert(
-        `NicQuest from ${data.userId}`,
-        'users profile photo here',
-        [
-          {
-            text: 'NicAssist',
-            onPress: () => console.log(`✅ NicAssist selected for user ${data.userId}`),
-            style: 'default',
-          },
-          {
-            text: 'Decline',
-          onPress: () => console.log(`❌ Decline NicQuest for user ${data.userId}`),
-            style: 'cancel',
-          },
-        ],
-        { cancelable: true }
-      );
-    }
-  });
-  return () => subscription.remove();
-}, []);
+    });
+    return () => subscription.remove();
+  }, []);
 
   async function registerForPushNotificationsAsync() {
     if (!Device.isDevice) {
@@ -328,16 +352,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#dcdcdc',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+    color: '#000',
   },
   headerUser: {
     fontSize: 16,
+    color: '#4d8a9b',
   },
 });
