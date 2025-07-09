@@ -1,12 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Text,
-  View,
-  StyleSheet,
-  TouchableOpacity,
-  Platform,
-  Alert
-} from 'react-native';
+import { Text, View, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { auth, db } from '../../firebase'; 
 import { doc, setDoc, getDoc } from 'firebase/firestore';
@@ -32,13 +25,13 @@ export default function SettingsScreen() {
     loadSettings();
   }, []);
 
-  // Save settings to Firestore when distance changes
-  const saveSettings = async () => {
+  // Save settings to Firestore
+  const saveSettings = async (newDistance) => {
     const user = auth.currentUser;
     if (user) {
       try {
         await setDoc(doc(db, 'users', user.uid), {
-          nicQuestDistance: distance
+          nicQuestDistance: newDistance
         }, { merge: true });
         Alert.alert('Success', 'Settings saved!');
       } catch (error) {
@@ -73,7 +66,7 @@ export default function SettingsScreen() {
                   onValueChange={(itemValue) => {
                     setDistance(itemValue);
                     setShowPicker(false);
-                    saveSettings(); // Save only on selection change
+                    saveSettings(itemValue); // Pass the new value directly
                   }}
                   dropdownIconColor="#000"
                 >
@@ -98,6 +91,7 @@ export default function SettingsScreen() {
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
