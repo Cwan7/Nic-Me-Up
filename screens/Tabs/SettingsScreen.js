@@ -3,6 +3,7 @@ import { Text, View, StyleSheet, TouchableOpacity, Platform, Alert } from 'react
 import { Picker } from '@react-native-picker/picker';
 import { auth, db } from '../../firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { MaterialIcons } from '@expo/vector-icons'; // Import MaterialIcons
 
 export default function SettingsScreen() {
   const [distance, setDistance] = useState(200); // Store as number
@@ -82,7 +83,12 @@ export default function SettingsScreen() {
             )}
           </View>
 
-          <Text style={styles.subheader}>NicAssist</Text>
+          <View style={styles.nicAssistHeader}>
+            <Text style={styles.subheader}>NicAssist</Text>
+            <TouchableOpacity>
+              <MaterialIcons name="add" size={24} color="#60a8b8" />
+            </TouchableOpacity>
+          </View>
           <View style={styles.settingItem}>
             <Text style={styles.settingText}>Coming Soon</Text>
           </View>
@@ -114,7 +120,13 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     color: '#000000',
+  },
+  nicAssistHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 10,
+    paddingRight: 10,
   },
   settingItem: {
     backgroundColor: '#ffffff',
@@ -154,7 +166,7 @@ const styles = StyleSheet.create({
   },
   picker: {
     height: Platform.OS === 'ios' ? 200 : 50,
-    width: '100%',
+    width: '100',
   },
   settingText: {
     fontSize: 16,
