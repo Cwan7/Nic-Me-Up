@@ -11,9 +11,9 @@
 		21352FF89D5E72F7F6A72E97 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D677EBBB887A10F9DA08C31 /* ExpoModulesProvider.swift */; };
 		304FA86A5317DF313063FB22 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 912E67056E9E8E75890C049F /* PrivacyInfo.xcprivacy */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
+		A4929E6AB89A8E1F8235F0C1 /* libPods-NicMeUp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D49DA191B16DE0CC82357729 /* libPods-NicMeUp.a */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		CBA49357436A4BD68FA13F54 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3DC3FAA7F9DC4F9AA812232F /* GoogleService-Info.plist */; };
-		E8EAE86C611A3BA3183AE42F /* libPods-NicMeUp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 3BC5902F63AF7C9013EB5B18 /* libPods-NicMeUp.a */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
@@ -21,14 +21,14 @@
 		13B07F961A680F5B00A75B9A /* NicMeUp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NicMeUp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = NicMeUp/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = NicMeUp/Info.plist; sourceTree = "<group>"; };
-		18C302F6A4F1E7A770A57F5B /* Pods-NicMeUp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-NicMeUp.release.xcconfig"; path = "Target Support Files/Pods-NicMeUp/Pods-NicMeUp.release.xcconfig"; sourceTree = "<group>"; };
-		3BC5902F63AF7C9013EB5B18 /* libPods-NicMeUp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-NicMeUp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		3DC3FAA7F9DC4F9AA812232F /* GoogleService-Info.plist */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.xml; name = "GoogleService-Info.plist"; path = "NicMeUp/GoogleService-Info.plist"; sourceTree = "<group>"; };
 		6D677EBBB887A10F9DA08C31 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-NicMeUp/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		912E67056E9E8E75890C049F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = NicMeUp/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		A0AE430EB7792178791CDE8A /* Pods-NicMeUp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-NicMeUp.debug.xcconfig"; path = "Target Support Files/Pods-NicMeUp/Pods-NicMeUp.debug.xcconfig"; sourceTree = "<group>"; };
+		A8B2B2A92D843CEE5425ADC1 /* Pods-NicMeUp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-NicMeUp.release.xcconfig"; path = "Target Support Files/Pods-NicMeUp/Pods-NicMeUp.release.xcconfig"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = NicMeUp/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		C36D5BBF3B4C870FA004BBE0 /* Pods-NicMeUp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-NicMeUp.debug.xcconfig"; path = "Target Support Files/Pods-NicMeUp/Pods-NicMeUp.debug.xcconfig"; sourceTree = "<group>"; };
+		D49DA191B16DE0CC82357729 /* libPods-NicMeUp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-NicMeUp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = NicMeUp/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* NicMeUp-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "NicMeUp-Bridging-Header.h"; path = "NicMeUp/NicMeUp-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -39,7 +39,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E8EAE86C611A3BA3183AE42F /* libPods-NicMeUp.a in Frameworks */,
+				A4929E6AB89A8E1F8235F0C1 /* libPods-NicMeUp.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,7 +65,7 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				3BC5902F63AF7C9013EB5B18 /* libPods-NicMeUp.a */,
+				D49DA191B16DE0CC82357729 /* libPods-NicMeUp.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -81,8 +81,8 @@
 		55EEBC9322FAFEF4241381BD /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				A0AE430EB7792178791CDE8A /* Pods-NicMeUp.debug.xcconfig */,
-				18C302F6A4F1E7A770A57F5B /* Pods-NicMeUp.release.xcconfig */,
+				C36D5BBF3B4C870FA004BBE0 /* Pods-NicMeUp.debug.xcconfig */,
+				A8B2B2A92D843CEE5425ADC1 /* Pods-NicMeUp.release.xcconfig */,
 			);
 			path = Pods;
 			sourceTree = "<group>";
@@ -141,14 +141,14 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "NicMeUp" */;
 			buildPhases = (
-				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
+				48F7B43715A35038283E4805 /* [CP] Check Pods Manifest.lock */,
 				DE9D50FC8D1B1567F9A39F25 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
-				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				370324EC248D2417515AEEAB /* [CP] Embed Pods Frameworks */,
+				77E1AD8F5C3DA572C4EA113D /* [CP] Embed Pods Frameworks */,
+				D755E99B08372C9CC411F37D /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -221,7 +221,7 @@
 			shellPath = /bin/sh;
 			shellScript = "if [[ -f \"$PODS_ROOT/../.xcode.env\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env\"\nfi\nif [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.local\"\nfi\n\n# The project root by default is one level up from the ios directory\nexport PROJECT_ROOT=\"$PROJECT_DIR\"/..\n\nif [[ \"$CONFIGURATION\" = *Debug* ]]; then\n  export SKIP_BUNDLING=1\nfi\nif [[ -z \"$ENTRY_FILE\" ]]; then\n  # Set the entry JS file using the bundler's entry resolution.\n  export ENTRY_FILE=\"$(\"$NODE_BINARY\" -e \"require('expo/scripts/resolveAppEntry')\" \"$PROJECT_ROOT\" ios absolute | tail -n 1)\"\nfi\n\nif [[ -z \"$CLI_PATH\" ]]; then\n  # Use Expo CLI\n  export CLI_PATH=\"$(\"$NODE_BINARY\" --print \"require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })\")\"\nfi\nif [[ -z \"$BUNDLE_COMMAND\" ]]; then\n  # Default Expo CLI command for bundling\n  export BUNDLE_COMMAND=\"export:embed\"\nfi\n\n# Source .xcode.env.updates if it exists to allow\n# SKIP_BUNDLING to be unset if needed\nif [[ -f \"$PODS_ROOT/../.xcode.env.updates\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.updates\"\nfi\n# Source local changes to allow overrides\n# if needed\nif [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.local\"\nfi\n\n`\"$NODE_BINARY\" --print \"require('path').dirname(require.resolve('react-native/package.json')) + '/scripts/react-native-xcode.sh'\"`\n\n";
 		};
-		08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */ = {
+		48F7B43715A35038283E4805 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -243,7 +243,7 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		370324EC248D2417515AEEAB /* [CP] Embed Pods Frameworks */ = {
+		77E1AD8F5C3DA572C4EA113D /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -261,7 +261,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-NicMeUp/Pods-NicMeUp-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
+		D755E99B08372C9CC411F37D /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -343,7 +343,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = A0AE430EB7792178791CDE8A /* Pods-NicMeUp.debug.xcconfig */;
+			baseConfigurationReference = C36D5BBF3B4C870FA004BBE0 /* Pods-NicMeUp.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -380,7 +380,7 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 18C302F6A4F1E7A770A57F5B /* Pods-NicMeUp.release.xcconfig */;
+			baseConfigurationReference = A8B2B2A92D843CEE5425ADC1 /* Pods-NicMeUp.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;

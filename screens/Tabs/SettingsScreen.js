@@ -1,15 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Text, View, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
+import { Text, View, TextInput, FlatList, StyleSheet, TouchableOpacity, Platform, Alert, Keyboard, Modal } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { auth, db } from '../../firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { MaterialIcons } from '@expo/vector-icons'; // Import MaterialIcons
+import { MaterialIcons } from '@expo/vector-icons';
+import { GOOGLE_API_KEY } from '@env';
+import { useNavigation } from '@react-navigation/native';
 
 export default function SettingsScreen() {
-  const [distance, setDistance] = useState(200); // Store as number
+  const [distance, setDistance] = useState(200);
   const [showPicker, setShowPicker] = useState(false);
+  const [address, setAddress] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalAddress, setModalAddress] = useState('');
+  const [modalSuggestions, setModalSuggestions] = useState([]);
+  const navigation = useNavigation();
 
-  // Load saved settings from Firestore on mount
   useEffect(() => {
     const loadSettings = async () => {
       const user = auth.currentUser;
@@ -17,28 +24,113 @@ export default function SettingsScreen() {
         const userDoc = await getDoc(doc(db, 'users', user.uid));
         if (userDoc.exists()) {
           const data = userDoc.data();
-          if (typeof data.nicQuestDistance === 'number') {
-            setDistance(data.nicQuestDistance);
-          }
+          if (typeof data.nicQuestDistance === 'number') setDistance(data.nicQuestDistance);
+          if (data.NicAssistAddress) setAddress(data.NicAssistAddress);
         }
       }
     };
     loadSettings();
   }, []);
 
-  // Save settings to Firestore
-  const saveSettings = async (newDistance) => {
+  const saveSettings = async (newDistance, newAddress = null) => {
     const user = auth.currentUser;
     if (user) {
       try {
-        await setDoc(doc(db, 'users', user.uid), {
-          nicQuestDistance: newDistance
-        }, { merge: true });
+        const update = { nicQuestDistance: newDistance };
+        if (newAddress) {
+          const { lat, lng } = newAddress.geometry.location;
+          update.NicAssistAddress = newAddress.description;
+          update.nicAssistLat = lat;
+          update.nicAssistLng = lng;
+        }
+        await setDoc(doc(db, 'users', user.uid), update, { merge: true });
         Alert.alert('Success', 'Settings saved!');
+        setModalVisible(false);
+        setModalAddress(newAddress ? newAddress.description : '');
+        setModalSuggestions([]);
+        if (newAddress) setAddress(newAddress.description);
       } catch (error) {
         console.error('Error saving settings:', error);
         Alert.alert('Error', 'Failed to save settings. Please try again.');
       }
+    }
+  };
+
+  useEffect(() => {
+    console.log('Input changed, fetching:', address);
+    if (address.length > 2) {
+      fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(address)}&types=address&components=country:us&key=${GOOGLE_API_KEY}`)
+        .then((response) => response.json())
+        .then((data) => {
+          console.log('Fetch Response:', data);
+          setSuggestions(data.predictions || []);
+        })
+        .catch((error) => console.log('Fetch Error:', error));
+    } else {
+      setSuggestions([]);
+    }
+  }, [address]);
+
+  useEffect(() => {
+    console.log('Modal input changed, fetching:', modalAddress);
+    if (modalAddress.length > 2) {
+      fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(modalAddress)}&types=address&components=country:us&key=${GOOGLE_API_KEY}`)
+        .then((response) => response.json())
+        .then((data) => {
+          console.log('Modal Fetch Response:', data);
+          setModalSuggestions(data.predictions || []);
+        })
+        .catch((error) => console.log('Fetch Error:', error));
+    } else {
+      setModalSuggestions([]);
+    }
+  }, [modalAddress]);
+
+  const handleAddressSelect = async (item) => {
+    Keyboard.dismiss();
+    console.log('Tap registered on:', item.description);
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${item.place_id}&key=${GOOGLE_API_KEY}`
+      );
+      const details = await response.json();
+      if (details.status === 'OK') {
+        const { description } = item;
+        const { lat, lng } = details.result.geometry.location;
+        setAddress(description);
+        setSuggestions([]);
+        saveSettings(distance, { description, geometry: { location: { lat, lng } } });
+      } else {
+        console.log('Place Details Error:', details.status);
+        Alert.alert('Error', 'Failed to fetch place details.');
+      }
+    } catch (error) {
+      console.error('Error fetching place details:', error);
+      Alert.alert('Error', 'Failed to process address. Please try again.');
+    }
+  };
+
+  const handleModalAddressSelect = async (item) => {
+    Keyboard.dismiss();
+    console.log('Modal tap registered on:', item.description);
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${item.place_id}&key=${GOOGLE_API_KEY}`
+      );
+      const details = await response.json();
+      if (details.status === 'OK') {
+        const { description } = item;
+        const { lat, lng } = details.result.geometry.location;
+        setModalAddress(description);
+        setModalSuggestions([]);
+        saveSettings(distance, { description, geometry: { location: { lat, lng } } });
+      } else {
+        console.log('Place Details Error:', details.status);
+        Alert.alert('Error', 'Failed to fetch place details.');
+      }
+    } catch (error) {
+      console.error('Error fetching place details:', error);
+      Alert.alert('Error', 'Failed to process address. Please try again.');
     }
   };
 
@@ -51,49 +143,122 @@ export default function SettingsScreen() {
           <View style={styles.settingItem}>
             <View style={styles.labelRow}>
               <Text style={styles.settingLabel}>Distance to a NicAssist</Text>
-              <TouchableOpacity
-                onPress={() => setShowPicker(!showPicker)}
-                style={styles.valueButton}
-              >
+              <TouchableOpacity onPress={() => setShowPicker(!showPicker)} style={styles.valueButton}>
                 <Text style={styles.selectedValue}>{`${distance}ft`}</Text>
               </TouchableOpacity>
             </View>
-
             {showPicker && (
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={distance}
-                  style={styles.picker}
-                  onValueChange={(itemValue) => {
-                    setDistance(itemValue);
-                    setShowPicker(false);
-                    saveSettings(itemValue);
-                  }}
-                  dropdownIconColor="#000"
-                >
-                  <Picker.Item label="100ft" value={100} />
-                  <Picker.Item label="150ft" value={150} />
-                  <Picker.Item label="200ft" value={200} />
-                  <Picker.Item label="250ft" value={250} />
-                  <Picker.Item label="300ft" value={300} />
-                  <Picker.Item label="400ft" value={400} />
-                  <Picker.Item label="500ft" value={500} />
-                </Picker>
+              <View style={styles.pickerWrapper}>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={distance}
+                    style={styles.picker}
+                    onValueChange={(itemValue) => {
+                      setDistance(itemValue);
+                      setShowPicker(false);
+                      saveSettings(itemValue);
+                    }}
+                    dropdownIconColor="#000"
+                  >
+                    <Picker.Item label="100ft" value={100} />
+                    <Picker.Item label="150ft" value={150} />
+                    <Picker.Item label="200ft" value={200} />
+                    <Picker.Item label="250ft" value={250} />
+                    <Picker.Item label="300ft" value={300} />
+                    <Picker.Item label="400ft" value={400} />
+                    <Picker.Item label="500ft" value={500} />
+                  </Picker>
+                </View>
               </View>
             )}
           </View>
 
           <View style={styles.nicAssistHeader}>
             <Text style={styles.subheader}>NicAssist</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => {
+              setModalVisible(true);
+              setModalAddress(''); // Default to "Enter your address"
+              setModalSuggestions([]);
+            }}>
               <MaterialIcons name="add" size={24} color="#60a8b8" />
             </TouchableOpacity>
           </View>
-          <View style={styles.settingItem}>
-            <Text style={styles.settingText}>Coming Soon</Text>
+          <View style={styles.addressRow}>
+            <Text style={styles.addressDisplay}>
+              {address || 'Add Address for NicAssist'}
+            </Text>
+            {address && (
+              <MaterialIcons name="toggle-on" size={24} color="#60a8b8" style={styles.toggleIcon} />
+            )}
           </View>
         </View>
       </View>
+
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => {
+          setModalVisible(false);
+          setModalAddress('');
+          setModalSuggestions([]);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Add NicAssist Address</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your address"
+              value={modalAddress}
+              onChangeText={setModalAddress}
+              onFocus={() => console.log('Modal input focused')}
+              returnKeyType="done"
+              blurOnSubmit={true}
+            />
+            <FlatList
+              data={modalSuggestions}
+              keyExtractor={(item) => item.place_id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  onPressIn={() => console.log('Modal Press In:', item.description)}
+                  onPress={() => handleModalAddressSelect(item)}
+                  style={styles.suggestion}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.suggestionText}>
+                    {item.structured_formatting.main_text} {item.structured_formatting.secondary_text}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={<Text>No suggestions</Text>}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={() => {
+                  setModalVisible(false);
+                  setModalAddress('');
+                  setModalSuggestions([]);
+                }}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={() => {
+                  if (modalAddress) saveSettings(distance, { description: modalAddress, geometry: { location: { lat: 0, lng: 0 } } });
+                  setModalVisible(false);
+                  setModalAddress('');
+                  setModalSuggestions([]);
+                }}
+              >
+                <Text style={styles.modalButtonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -126,7 +291,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
-    paddingRight: 10,
   },
   settingItem: {
     backgroundColor: '#ffffff',
@@ -157,19 +321,80 @@ const styles = StyleSheet.create({
   valueButton: {
     paddingVertical: 8,
   },
+  pickerWrapper: {
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
   pickerContainer: {
     borderWidth: 1,
     borderColor: '#60a8b8',
     borderRadius: 8,
-    overflow: 'hidden',
     marginTop: 10,
   },
   picker: {
     height: Platform.OS === 'ios' ? 200 : 50,
-    width: '100',
+    width: '100%',
   },
-  settingText: {
+  input: {
+    height: 50,
     fontSize: 16,
-    color: '#666666',
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: '#60a8b8',
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  suggestion: {
+    padding: 10,
+    borderBottomWidth: 1,
+    borderColor: '#60a8b8',
+  },
+  suggestionText: {
+    color: '#000',
+  },
+  addressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  addressDisplay: {
+    fontSize: 16,
+    color: '#333',
+    flex: 1,
+  },
+  toggleIcon: {
+    marginLeft: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 10,
+    marginHorizontal: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 10,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+  },
+  modalButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: '#60a8b8',
+    borderRadius: 8,
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontSize: 16,
   },
 });

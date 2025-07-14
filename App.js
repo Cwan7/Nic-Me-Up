@@ -19,6 +19,8 @@ import CreateAccountScreen from './screens/CreateAccountScreen';
 import HomeScreen from './screens/Tabs/HomeScreen';
 import SettingsScreen from './screens/Tabs/SettingsScreen';
 import ProfileScreen from './screens/Tabs/ProfileScreen';
+import TestAutocomplete from './screens/Tabs/TestAutoCompleteScreen';
+
 
 // Define the background task
 const BACKGROUND_NOTIFICATION_TASK = 'background-notification';
@@ -122,6 +124,9 @@ const TabNavigator = ({ user }) => {
       </Tab.Screen>
       <Tab.Screen name="Profile">
         {(props) => <ProfileScreen {...props} user={user} />}
+      </Tab.Screen>
+      <Tab.Screen name="TEST">
+        {(props) => <TestAutocomplete  />}
       </Tab.Screen>
     </Tab.Navigator>
   );
