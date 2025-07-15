@@ -177,7 +177,7 @@ export default function SettingsScreen() {
             <Text style={styles.subheader}>NicAssist</Text>
             <TouchableOpacity onPress={() => {
               setModalVisible(true);
-              setModalAddress(''); // Default to "Enter your address"
+              setModalAddress(''); 
               setModalSuggestions([]);
             }}>
               <MaterialIcons name="add" size={24} color="#60a8b8" />
