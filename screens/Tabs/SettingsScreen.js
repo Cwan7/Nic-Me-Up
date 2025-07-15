@@ -10,11 +10,11 @@ import { useNavigation } from '@react-navigation/native';
 export default function SettingsScreen() {
   const [distance, setDistance] = useState(200);
   const [showPicker, setShowPicker] = useState(false);
-  const [address, setAddress] = useState('');
-  const [suggestions, setSuggestions] = useState([]);
+  const [nicAssists, setNicAssists] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalAddress, setModalAddress] = useState('');
   const [modalSuggestions, setModalSuggestions] = useState([]);
+  const [editingIndex, setEditingIndex] = useState(null);
   const navigation = useNavigation();
 
   useEffect(() => {
@@ -25,30 +25,39 @@ export default function SettingsScreen() {
         if (userDoc.exists()) {
           const data = userDoc.data();
           if (typeof data.nicQuestDistance === 'number') setDistance(data.nicQuestDistance);
-          if (data.NicAssistAddress) setAddress(data.NicAssistAddress);
+          if (data.NicAssists) setNicAssists(data.NicAssists);
         }
       }
     };
     loadSettings();
   }, []);
 
-  const saveSettings = async (newDistance, newAddress = null) => {
+  const saveSettings = async (newDistance, newNicAssist = null, update = {}) => {
     const user = auth.currentUser;
     if (user) {
       try {
-        const update = { nicQuestDistance: newDistance };
-        if (newAddress) {
-          const { lat, lng } = newAddress.geometry.location;
-          update.NicAssistAddress = newAddress.description;
-          update.nicAssistLat = lat;
-          update.nicAssistLng = lng;
+        const updateData = { nicQuestDistance: newDistance, ...update };
+        if (newNicAssist) {
+          const newAssists = [...nicAssists];
+          if (editingIndex !== null) {
+            newAssists[editingIndex] = newNicAssist;
+          } else {
+            newAssists.push(newNicAssist);
+          }
+          updateData.NicAssists = newAssists;
         }
-        await setDoc(doc(db, 'users', user.uid), update, { merge: true });
+        await setDoc(doc(db, 'users', user.uid), updateData, { merge: true });
         Alert.alert('Success', 'Settings saved!');
         setModalVisible(false);
-        setModalAddress(newAddress ? newAddress.description : '');
+        setModalAddress('');
         setModalSuggestions([]);
-        if (newAddress) setAddress(newAddress.description);
+        setEditingIndex(null);
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          if (data.NicAssists) setNicAssists(data.NicAssists);
+          if (typeof data.nicQuestDistance === 'number') setDistance(data.nicQuestDistance);
+        }
       } catch (error) {
         console.error('Error saving settings:', error);
         Alert.alert('Error', 'Failed to save settings. Please try again.');
@@ -57,29 +66,10 @@ export default function SettingsScreen() {
   };
 
   useEffect(() => {
-    console.log('Input changed, fetching:', address);
-    if (address.length > 2) {
-      fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(address)}&types=address&components=country:us&key=${GOOGLE_API_KEY}`)
-        .then((response) => response.json())
-        .then((data) => {
-          console.log('Fetch Response:', data);
-          setSuggestions(data.predictions || []);
-        })
-        .catch((error) => console.log('Fetch Error:', error));
-    } else {
-      setSuggestions([]);
-    }
-  }, [address]);
-
-  useEffect(() => {
-    console.log('Modal input changed, fetching:', modalAddress);
     if (modalAddress.length > 2) {
       fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(modalAddress)}&types=address&components=country:us&key=${GOOGLE_API_KEY}`)
         .then((response) => response.json())
-        .then((data) => {
-          console.log('Modal Fetch Response:', data);
-          setModalSuggestions(data.predictions || []);
-        })
+        .then((data) => setModalSuggestions(data.predictions || []))
         .catch((error) => console.log('Fetch Error:', error));
     } else {
       setModalSuggestions([]);
@@ -88,7 +78,6 @@ export default function SettingsScreen() {
 
   const handleAddressSelect = async (item) => {
     Keyboard.dismiss();
-    console.log('Tap registered on:', item.description);
     try {
       const response = await fetch(
         `https://maps.googleapis.com/maps/api/place/details/json?place_id=${item.place_id}&key=${GOOGLE_API_KEY}`
@@ -97,11 +86,14 @@ export default function SettingsScreen() {
       if (details.status === 'OK') {
         const { description } = item;
         const { lat, lng } = details.result.geometry.location;
-        setAddress(description);
-        setSuggestions([]);
-        saveSettings(distance, { description, geometry: { location: { lat, lng } } });
+        const newNicAssist = {
+          NicAssistAddress: description,
+          NicAssistLat: lat,
+          NicAssistLng: lng,
+          Active: true
+        };
+        saveSettings(distance, newNicAssist);
       } else {
-        console.log('Place Details Error:', details.status);
         Alert.alert('Error', 'Failed to fetch place details.');
       }
     } catch (error) {
@@ -110,28 +102,11 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleModalAddressSelect = async (item) => {
-    Keyboard.dismiss();
-    console.log('Modal tap registered on:', item.description);
-    try {
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${item.place_id}&key=${GOOGLE_API_KEY}`
-      );
-      const details = await response.json();
-      if (details.status === 'OK') {
-        const { description } = item;
-        const { lat, lng } = details.result.geometry.location;
-        setModalAddress(description);
-        setModalSuggestions([]);
-        saveSettings(distance, { description, geometry: { location: { lat, lng } } });
-      } else {
-        console.log('Place Details Error:', details.status);
-        Alert.alert('Error', 'Failed to fetch place details.');
-      }
-    } catch (error) {
-      console.error('Error fetching place details:', error);
-      Alert.alert('Error', 'Failed to process address. Please try again.');
-    }
+  const toggleActive = (index) => {
+    const newAssists = [...nicAssists];
+    newAssists[index].Active = !newAssists[index].Active;
+    setNicAssists(newAssists); // Update state immediately
+    saveSettings(distance, null, { NicAssists: newAssists }); // Save to Firestore
   };
 
   return (
@@ -177,20 +152,27 @@ export default function SettingsScreen() {
             <Text style={styles.subheader}>NicAssist</Text>
             <TouchableOpacity onPress={() => {
               setModalVisible(true);
-              setModalAddress(''); 
+              setModalAddress('');
               setModalSuggestions([]);
+              setEditingIndex(null);
             }}>
               <MaterialIcons name="add" size={24} color="#60a8b8" />
             </TouchableOpacity>
           </View>
-          <View style={styles.addressRow}>
-            <Text style={styles.addressDisplay}>
-              {address || 'Add Address for NicAssist'}
-            </Text>
-            {address && (
-              <MaterialIcons name="toggle-on" size={24} color="#60a8b8" style={styles.toggleIcon} />
-            )}
-          </View>
+          {nicAssists.map((assist, index) => (
+            <View style={styles.settingItem} key={index}>
+              <View style={styles.addressRow}>
+                <Text style={styles.addressDisplay}>{assist.NicAssistAddress}</Text>
+                <TouchableOpacity onPress={() => toggleActive(index)}>
+                  <MaterialIcons
+                    name={assist.Active ? 'toggle-on' : 'toggle-off'}
+                    size={40}
+                    color={assist.Active ? '#0ba808' : '#adadad'} // Updated green to #0ba808
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
         </View>
       </View>
 
@@ -212,7 +194,6 @@ export default function SettingsScreen() {
               placeholder="Enter your address"
               value={modalAddress}
               onChangeText={setModalAddress}
-              onFocus={() => console.log('Modal input focused')}
               returnKeyType="done"
               blurOnSubmit={true}
             />
@@ -221,8 +202,7 @@ export default function SettingsScreen() {
               keyExtractor={(item) => item.place_id}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  onPressIn={() => console.log('Modal Press In:', item.description)}
-                  onPress={() => handleModalAddressSelect(item)}
+                  onPress={() => handleAddressSelect(item)}
                   style={styles.suggestion}
                   activeOpacity={0.7}
                 >
@@ -231,11 +211,44 @@ export default function SettingsScreen() {
                   </Text>
                 </TouchableOpacity>
               )}
-              ListEmptyComponent={<Text>No suggestions</Text>}
             />
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={styles.modalButton}
+                style={[styles.modalButton, { backgroundColor: '#60a8b8' }]} // Restored Save button background
+                onPress={() => {
+                  if (modalAddress) {
+                    fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(modalAddress)}&types=address&components=country:us&key=${GOOGLE_API_KEY}`)
+                      .then((response) => response.json())
+                      .then((data) => {
+                        if (data.predictions.length > 0) {
+                          const item = data.predictions[0];
+                          fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${item.place_id}&key=${GOOGLE_API_KEY}`)
+                            .then((res) => res.json())
+                            .then((details) => {
+                              if (details.status === 'OK') {
+                                const { description } = item;
+                                const { lat, lng } = details.result.geometry.location;
+                                const newNicAssist = {
+                                  NicAssistAddress: description,
+                                  NicAssistLat: lat,
+                                  NicAssistLng: lng,
+                                  Active: true
+                                };
+                                saveSettings(distance, newNicAssist);
+                              }
+                            });
+                        }
+                      });
+                  }
+                  setModalVisible(false);
+                  setModalAddress('');
+                  setModalSuggestions([]);
+                }}
+              >
+                <Text style={styles.modalButtonText}>Save</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: '#cdcdcd' }]} // Cancel button with #cdcdcd background
                 onPress={() => {
                   setModalVisible(false);
                   setModalAddress('');
@@ -243,17 +256,6 @@ export default function SettingsScreen() {
                 }}
               >
                 <Text style={styles.modalButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalButton}
-                onPress={() => {
-                  if (modalAddress) saveSettings(distance, { description: modalAddress, geometry: { location: { lat: 0, lng: 0 } } });
-                  setModalVisible(false);
-                  setModalAddress('');
-                  setModalSuggestions([]);
-                }}
-              >
-                <Text style={styles.modalButtonText}>Save</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -264,137 +266,30 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f1f1f1',
-  },
-  content: {
-    flex: 1,
-    padding: 20,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#000000',
-    marginBottom: 20,
-  },
-  settingsList: {
-    marginTop: 10,
-  },
-  subheader: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#000000',
-  },
-  nicAssistHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  settingItem: {
-    backgroundColor: '#ffffff',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  labelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  settingLabel: {
-    fontSize: 16,
-    color: '#333',
-  },
-  selectedValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#4d8a9b',
-  },
-  valueButton: {
-    paddingVertical: 8,
-  },
-  pickerWrapper: {
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  pickerContainer: {
-    borderWidth: 1,
-    borderColor: '#60a8b8',
-    borderRadius: 8,
-    marginTop: 10,
-  },
-  picker: {
-    height: Platform.OS === 'ios' ? 200 : 50,
-    width: '100%',
-  },
-  input: {
-    height: 50,
-    fontSize: 16,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: '#60a8b8',
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  suggestion: {
-    padding: 10,
-    borderBottomWidth: 1,
-    borderColor: '#60a8b8',
-  },
-  suggestionText: {
-    color: '#000',
-  },
-  addressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  addressDisplay: {
-    fontSize: 16,
-    color: '#333',
-    flex: 1,
-  },
-  toggleIcon: {
-    marginLeft: 10,
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 10,
-    marginHorizontal: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 10,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  modalButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    backgroundColor: '#60a8b8',
-    borderRadius: 8,
-  },
-  modalButtonText: {
-    color: '#fff',
-    fontSize: 16,
-  },
+  container: { flex: 1, backgroundColor: '#f1f1f1' },
+  content: { flex: 1, padding: 20 },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#000000', marginBottom: 20 },
+  settingsList: { marginTop: 10 },
+  subheader: { fontSize: 20, fontWeight: '600', color: '#000000' },
+  nicAssistHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  settingItem: { backgroundColor: '#ffffff', padding: 15, borderRadius: 10, marginBottom: 15, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 2 },
+  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  settingLabel: { fontSize: 16, color: '#333' },
+  selectedValue: { fontSize: 16, fontWeight: '600', color: '#4d8a9b' },
+  valueButton: { paddingVertical: 8 },
+  pickerWrapper: { borderRadius: 8, overflow: 'hidden' },
+  pickerContainer: { borderWidth: 1, borderColor: '#60a8b8', borderRadius: 8, marginTop: 10 },
+  picker: { height: Platform.OS === 'ios' ? 200 : 50, width: '100%' },
+  input: { height: 50, fontSize: 16, paddingHorizontal: 10, borderWidth: 1, borderColor: '#60a8b8', borderRadius: 8, marginBottom: 10 },
+  suggestion: { padding: 10, borderBottomWidth: 1, borderColor: '#60a8b8' },
+  suggestionText: { color: '#000' },
+  addressRow: { flexDirection: 'row', alignItems: 'center' },
+  addressDisplay: { fontSize: 16, color: '#333', flex: 1 },
+  toggleIcon: { marginLeft: 10, paddingLeft: 10 },
+  modalOverlay: { flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)' },
+  modalContent: { backgroundColor: '#fff', padding: 20, borderRadius: 10, marginHorizontal: 20 },
+  modalTitle: { fontSize: 20, fontWeight: '600', color: '#000', marginBottom: 10 },
+  modalButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
+  modalButton: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 4, marginHorizontal: 10,alignItems: 'center', flex: 1},
+  modalButtonText: { color: '#fff', fontSize: 16 },
 });
