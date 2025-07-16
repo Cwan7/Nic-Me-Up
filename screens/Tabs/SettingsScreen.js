@@ -14,8 +14,27 @@ export default function SettingsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [modalAddress, setModalAddress] = useState('');
   const [modalSuggestions, setModalSuggestions] = useState([]);
+  const [selectedNicAssist, setSelectedNicAssist] = useState(null); // Store selected address
   const [editingIndex, setEditingIndex] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
   const navigation = useNavigation();
+
+  useEffect(() => {
+    if (modalAddress.length > 2) {
+      fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(modalAddress)}&types=address&components=country:us&key=${GOOGLE_API_KEY}`)
+        .then((response) => response.json())
+        .then((data) => {
+          if (!selectedNicAssist) { // Only fetch suggestions if no address is selected
+            setModalSuggestions(data.predictions || []);
+          } else {
+            setModalSuggestions([]); // Clear suggestions when an address is selected
+          }
+        })
+        .catch((error) => console.log('Fetch Error:', error));
+    } else {
+      setModalSuggestions([]);
+    }
+  }, [modalAddress, selectedNicAssist]); // Added selectedNicAssist as dependency
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -51,6 +70,7 @@ export default function SettingsScreen() {
         setModalVisible(false);
         setModalAddress('');
         setModalSuggestions([]);
+        setSelectedNicAssist(null);
         setEditingIndex(null);
         const userDoc = await getDoc(doc(db, 'users', user.uid));
         if (userDoc.exists()) {
@@ -65,17 +85,6 @@ export default function SettingsScreen() {
     }
   };
 
-  useEffect(() => {
-    if (modalAddress.length > 2) {
-      fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(modalAddress)}&types=address&components=country:us&key=${GOOGLE_API_KEY}`)
-        .then((response) => response.json())
-        .then((data) => setModalSuggestions(data.predictions || []))
-        .catch((error) => console.log('Fetch Error:', error));
-    } else {
-      setModalSuggestions([]);
-    }
-  }, [modalAddress]);
-
   const handleAddressSelect = async (item) => {
     Keyboard.dismiss();
     try {
@@ -86,13 +95,13 @@ export default function SettingsScreen() {
       if (details.status === 'OK') {
         const { description } = item;
         const { lat, lng } = details.result.geometry.location;
-        const newNicAssist = {
+        setSelectedNicAssist({
           NicAssistAddress: description,
           NicAssistLat: lat,
           NicAssistLng: lng,
           Active: true
-        };
-        saveSettings(distance, newNicAssist);
+        });
+        setModalAddress(description);
       } else {
         Alert.alert('Error', 'Failed to fetch place details.');
       }
@@ -105,8 +114,26 @@ export default function SettingsScreen() {
   const toggleActive = (index) => {
     const newAssists = [...nicAssists];
     newAssists[index].Active = !newAssists[index].Active;
-    setNicAssists(newAssists); // Update state immediately
-    saveSettings(distance, null, { NicAssists: newAssists }); // Save to Firestore
+    setNicAssists(newAssists);
+    saveSettings(distance, null, { NicAssists: newAssists });
+  };
+
+  const handleEditToggle = () => {
+    setIsEditing(!isEditing);
+  };
+
+  const deleteAddress = (index) => {
+    const newAssists = [...nicAssists];
+    newAssists.splice(index, 1);
+    saveSettings(distance, null, { NicAssists: newAssists });
+  };
+
+  const handleSaveAddress = () => {
+    if (selectedNicAssist) {
+      saveSettings(distance, selectedNicAssist);
+    } else {
+      Alert.alert('Error', 'No address selected.');
+    }
   };
 
   return (
@@ -115,7 +142,7 @@ export default function SettingsScreen() {
         <Text style={styles.title}>Settings</Text>
         <View style={styles.settingsList}>
           <Text style={styles.subheader}>NicQuest</Text>
-          <View style={styles.settingItem}>
+          <View style={[styles.settingItem, styles.nicQuestSpacing]}>
             <View style={styles.labelRow}>
               <Text style={styles.settingLabel}>Distance to a NicAssist</Text>
               <TouchableOpacity onPress={() => setShowPicker(!showPicker)} style={styles.valueButton}>
@@ -149,7 +176,12 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.nicAssistHeader}>
-            <Text style={styles.subheader}>NicAssist</Text>
+            <View style={styles.editSection}>
+              <Text style={styles.subheader}>NicAssist</Text>
+              <TouchableOpacity onPress={handleEditToggle} style={styles.editButton}>
+                <MaterialIcons name="edit" size={24} color={isEditing ? '#60a8b8' : '#000'} />
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity onPress={() => {
               setModalVisible(true);
               setModalAddress('');
@@ -159,6 +191,11 @@ export default function SettingsScreen() {
               <MaterialIcons name="add" size={24} color="#60a8b8" />
             </TouchableOpacity>
           </View>
+          {nicAssists.length === 0 && (
+            <View style={styles.settingItem}>
+              <Text style={styles.AddAddress}>Add NicAssist Address</Text>
+            </View>
+          )}
           {nicAssists.map((assist, index) => (
             <View style={styles.settingItem} key={index}>
               <View style={styles.addressRow}>
@@ -167,10 +204,18 @@ export default function SettingsScreen() {
                   <MaterialIcons
                     name={assist.Active ? 'toggle-on' : 'toggle-off'}
                     size={40}
-                    color={assist.Active ? '#0ba808' : '#adadad'} // Updated green to #0ba808
+                    color={assist.Active ? '#60a8b8' : '#adadad'}
                   />
                 </TouchableOpacity>
               </View>
+              {isEditing && (
+                <TouchableOpacity
+                  style={styles.deleteButton}
+                  onPress={() => deleteAddress(index)}
+                >
+                  <Text style={styles.deleteText}>Delete Address</Text>
+                </TouchableOpacity>
+              )}
             </View>
           ))}
         </View>
@@ -184,6 +229,7 @@ export default function SettingsScreen() {
           setModalVisible(false);
           setModalAddress('');
           setModalSuggestions([]);
+          setSelectedNicAssist(null);
         }}
       >
         <View style={styles.modalOverlay}>
@@ -214,45 +260,18 @@ export default function SettingsScreen() {
             />
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: '#60a8b8' }]} // Restored Save button background
-                onPress={() => {
-                  if (modalAddress) {
-                    fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(modalAddress)}&types=address&components=country:us&key=${GOOGLE_API_KEY}`)
-                      .then((response) => response.json())
-                      .then((data) => {
-                        if (data.predictions.length > 0) {
-                          const item = data.predictions[0];
-                          fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${item.place_id}&key=${GOOGLE_API_KEY}`)
-                            .then((res) => res.json())
-                            .then((details) => {
-                              if (details.status === 'OK') {
-                                const { description } = item;
-                                const { lat, lng } = details.result.geometry.location;
-                                const newNicAssist = {
-                                  NicAssistAddress: description,
-                                  NicAssistLat: lat,
-                                  NicAssistLng: lng,
-                                  Active: true
-                                };
-                                saveSettings(distance, newNicAssist);
-                              }
-                            });
-                        }
-                      });
-                  }
-                  setModalVisible(false);
-                  setModalAddress('');
-                  setModalSuggestions([]);
-                }}
+                style={[styles.modalButton, { backgroundColor: '#60a8b8' }]}
+                onPress={handleSaveAddress}
               >
                 <Text style={styles.modalButtonText}>Save</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: '#cdcdcd' }]} // Cancel button with #cdcdcd background
+                style={[styles.modalButton, { backgroundColor: '#cdcdcd' }]}
                 onPress={() => {
                   setModalVisible(false);
                   setModalAddress('');
                   setModalSuggestions([]);
+                  setSelectedNicAssist(null);
                 }}
               >
                 <Text style={styles.modalButtonText}>Cancel</Text>
@@ -266,16 +285,17 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f1f1f1' },
+  container: { flex: 1, backgroundColor: '#dcdcdc' },
   content: { flex: 1, padding: 20 },
   title: { fontSize: 24, fontWeight: 'bold', color: '#000000', marginBottom: 20 },
   settingsList: { marginTop: 10 },
   subheader: { fontSize: 20, fontWeight: '600', color: '#000000' },
   nicAssistHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  settingItem: { backgroundColor: '#ffffff', padding: 15, borderRadius: 10, marginBottom: 15, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 2 },
+  settingItem: { backgroundColor: '#f0f0f0', padding: 15, borderRadius: 10, marginBottom: 15, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 2 },
+  nicQuestSpacing: { marginTop: 15 }, // Added spacing for NicQuest section only
   labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   settingLabel: { fontSize: 16, color: '#333' },
-  selectedValue: { fontSize: 16, fontWeight: '600', color: '#4d8a9b' },
+  selectedValue: { fontSize: 16, fontWeight: '600', color: '#4d8b9b' },
   valueButton: { paddingVertical: 8 },
   pickerWrapper: { borderRadius: 8, overflow: 'hidden' },
   pickerContainer: { borderWidth: 1, borderColor: '#60a8b8', borderRadius: 8, marginTop: 10 },
@@ -284,12 +304,16 @@ const styles = StyleSheet.create({
   suggestion: { padding: 10, borderBottomWidth: 1, borderColor: '#60a8b8' },
   suggestionText: { color: '#000' },
   addressRow: { flexDirection: 'row', alignItems: 'center' },
-  addressDisplay: { fontSize: 16, color: '#333', flex: 1 },
-  toggleIcon: { marginLeft: 10, paddingLeft: 10 },
+  addressDisplay: { fontSize: 16, color: '#333', flex: 1, marginRight: 10 },
   modalOverlay: { flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)' },
   modalContent: { backgroundColor: '#fff', padding: 20, borderRadius: 10, marginHorizontal: 20 },
   modalTitle: { fontSize: 20, fontWeight: '600', color: '#000', marginBottom: 10 },
   modalButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  modalButton: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 4, marginHorizontal: 10,alignItems: 'center', flex: 1},
+  modalButton: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 4, marginHorizontal: 10, alignItems: 'center', flex: 1 },
   modalButtonText: { color: '#fff', fontSize: 16 },
+  editSection: { flexDirection: 'row', alignItems: 'center' },
+  editButton: { width: 30, height: 30, marginLeft: 5 },
+  deleteButton: { backgroundColor: '#60a8b8', padding: 10, borderRadius: 5, marginTop: 5, alignItems: 'center' },
+  deleteText: { color: '#fff', fontSize: 16 },
+  AddAddress: {paddingTop: 10, paddingBottom: 10, fontSize: 16}
 });
