@@ -1,28 +1,105 @@
-import React from 'react';
-import { Text, View, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { Text, View, TouchableOpacity, StyleSheet, Dimensions, ScrollView } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
+import { auth, db } from '../../firebase'; // Adjust path as needed
+import { collection, getDocs } from 'firebase/firestore';
 
-export default function HomeScreen({ navigation, user }) {
+export default function HomeScreen({ user }) {
+  const [nicAssists, setNicAssists] = useState([]);
+  const [userLocation, setUserLocation] = useState(null);
+  const userName = user?.displayName || 'Friend';
+
+  useEffect(() => {
+    const loadUserData = async () => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+
+      try {
+        const querySnapshot = await getDocs(collection(db, 'users'));
+        const assists = [];
+
+        querySnapshot.forEach(docSnap => {
+          const data = docSnap.data();
+
+          // Save current user's location for centering the map
+          if (docSnap.id === currentUser.uid && data.location) {
+            setUserLocation(data.location);
+          }
+
+          // Add other users' active NicAssists from the array
+          if (docSnap.id !== currentUser.uid && data.NicAssists) {
+            data.NicAssists.forEach(assist => {
+              if (assist.Active) {
+                assists.push({
+                  NicAssistAddress: assist.NicAssistAddress,
+                  NicAssistLat: assist.NicAssistLat,
+                  NicAssistLng: assist.NicAssistLng,
+                });
+              }
+            });
+          }
+        });
+
+        setNicAssists(assists);
+        console.log('Loaded NicAssists:', assists); // Debug log
+      } catch (error) {
+        console.error('Error loading NicAssist data:', error);
+      }
+    };
+
+    loadUserData();
+  }, []);
+
   const handleNicQuest = () => {
     console.log('☎️ NicQuest button pressed');
   };
 
-  const userName = user?.displayName || 'Friend';
-
   return (
     <View style={styles.container}>
-      <View style={styles.content}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         <Text style={styles.welcomeText}>Hey  
           <Text style={styles.username}> {userName}</Text>! Need a pouch?</Text>
         <Text style={styles.subText}>Tap to send a NicQuest to nearby users.</Text>
         <TouchableOpacity style={styles.nicQuestButton} onPress={handleNicQuest}>
           <Text style={styles.text}>NicQuest</Text>
         </TouchableOpacity>
+        {userLocation && (
+          <MapView
+            style={styles.map}
+            initialRegion={{
+              latitude: userLocation.latitude,
+              longitude: userLocation.longitude,
+              latitudeDelta: 0.0922,
+              longitudeDelta: 0.0421,
+            }}
+          >
+            {nicAssists.map((assist, index) => (
+              <Marker
+                key={index}
+                coordinate={{
+                  latitude: assist.NicAssistLat,
+                  longitude: assist.NicAssistLng,
+                }}
+                title={assist.NicAssistAddress}
+              />
+            ))}
+            <Marker
+              key="currentUser"
+              coordinate={{
+                latitude: userLocation.latitude,
+                longitude: userLocation.longitude,
+              }}
+              title="Your Location"
+              pinColor="#4d8a9b" 
+            />
+          </MapView>
+        )}
         <View style={styles.activitySection}>
           <Text style={styles.activityTitle}>Recent Activity</Text>
           <View style={styles.divider} />
           <View style={styles.activityPlaceholder} />
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -32,9 +109,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#dcdcdc',
   },
-  content: {
+  scrollView: {
     flex: 1,
-    justifyContent: 'center',
+  },
+  content: {
     alignItems: 'center',
     padding: 20,
   },
@@ -53,24 +131,27 @@ const styles = StyleSheet.create({
   },
   nicQuestButton: {
     marginVertical: 10,
-    borderRadius: 10, // Rounded corners for a cooler look
+    borderRadius: 10, 
     paddingVertical: 15,
     paddingHorizontal: 30,
     alignItems: 'center',
-    backgroundColor: '#60a8b8', // Base color
-    // Pseudo-gradient effect with multiple background colors
+    backgroundColor: '#60a8b8',
     borderBottomWidth: 4,
     borderBottomColor: '#4d8a9b',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
-    elevation: 5, // For Android shadow
   },
   text: {
     color: '#ffffff',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  map: {
+    width: Dimensions.get('window').width - 40,
+    height: 300,
+    marginVertical: 20,
   },
   activitySection: {
     marginTop: 30,
@@ -86,16 +167,16 @@ const styles = StyleSheet.create({
   divider: {
     width: '90%',
     height: 2,
-    backgroundColor: '#b7b7b7', // Dark grey line
+    backgroundColor: '#b7b7b7', 
     marginBottom: 10,
   },
   activityPlaceholder: {
-    height: 50, // Placeholder height for future content
+    height: 50, 
     width: '90%',
-    backgroundColor: '#f0f0f0', // Light grey for visibility
+    backgroundColor: '#f0f0f0', 
   },
   username: {
     fontWeight: 'bold',
-    color: '#4d8a9b', // Matches your brand color
+    color: '#60a8b8', 
   },
 });

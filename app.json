@@ -15,7 +15,9 @@
           "remote-notification", "fetch"
         ],
         "ITSAppUsesNonExemptEncryption": false,
-        "UILaunchStoryboardName": "LaunchScreen"
+        "UILaunchStoryboardName": "LaunchScreen",
+        "NSLocationWhenInUseUsageDescription": "Allow Nic-Me-Up to access your location for showing nearby NicAssists",
+        "NSLocationAlwaysUsageDescription": "Allow Nic-Me-Up to access your location even when the app is in the background"
       }
     },
     "plugins": [
