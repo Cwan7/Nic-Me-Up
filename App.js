@@ -20,7 +20,6 @@ import HomeScreen from './screens/Tabs/HomeScreen';
 import SettingsScreen from './screens/Tabs/SettingsScreen';
 import ProfileScreen from './screens/Tabs/ProfileScreen';
 
-
 // Define the background task
 const BACKGROUND_NOTIFICATION_TASK = 'background-notification';
 TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, ({ data, error, executionInfo }) => {
@@ -59,10 +58,10 @@ async function registerBackgroundHandler() {
     } else {
       console.log('✅ Background task already registered');
     }
-    return true; // Indicate success
+    return true;
   } catch (error) {
     console.error('Background task registration error:', error);
-    return false; // Indicate failure
+    return false;
   }
 }
 
@@ -142,19 +141,21 @@ export default function App() {
       setUser(user);
       console.log('User set:', user?.displayName || 'No display name');
 
-      // Initialize Firestore fields for the user
       if (user) {
         try {
           const userDocRef = doc(db, 'users', user.uid);
           const userDoc = await getDoc(userDocRef);
+          const token = (await Notifications.getExpoPushTokenAsync({ projectId: Constants.expoConfig.extra?.eas?.projectId })).data;
+          console.log(`${user.displayName} Expo Push Token:`, token);
+
           await setDoc(userDocRef, {
             flavors: userDoc.exists() && userDoc.data().flavors ? userDoc.data().flavors : "Random",
-            nicQuestDistance: userDoc.exists() && userDoc.data().nicQuestDistance ? userDoc.data().nicQuestDistance : 200,
+            nicQuestDistance: userDoc.exists() && userDoc.data().nicQuestDistance ? userDoc.data().nicQuestDistance : 250,
             notes: userDoc.exists() && userDoc.data().notes ? userDoc.data().notes : "Notes for NicQuest",
             photoURL: userDoc.exists() && userDoc.data().photoURL ? userDoc.data().photoURL : null,
             pouchType: userDoc.exists() && userDoc.data().pouchType ? userDoc.data().pouchType : "Random",
-            strength: userDoc.exists() && userDoc.data().strength ? userDoc.data().strength : "3mg-6mg"
-            // Placeholder for future fields
+            strength: userDoc.exists() && userDoc.data().strength ? userDoc.data().strength : "3mg-6mg",
+            expoPushToken: token,
           }, { merge: true });
           console.log('Firestore user document initialized or updated for UID:', user.uid);
         } catch (error) {
@@ -162,23 +163,35 @@ export default function App() {
         }
       }
 
-      // Handle location permissions separately
       if (user && !locationPermission) {
         console.log('Requesting location permission');
         const { status } = await Location.requestForegroundPermissionsAsync();
         console.log('Location permission status:', status);
         if (status === 'granted') {
           console.log('Location permission granted, fetching location');
-          const location = await Location.getCurrentPositionAsync({});
-          console.log('User location fetched:', location.coords);
+          let location;
+          if (!Device.isDevice) {
+            // Hardcode location for simulator (near Cwan's location in Denver)
+            location = {
+              coords: {
+                latitude: 39.7405,
+                longitude: -104.9706,
+                timestamp: new Date().toISOString(),
+              },
+            };
+            console.log('Using hardcoded location for simulator:', location.coords);
+          } else {
+            location = await Location.getCurrentPositionAsync({});
+            console.log('User location fetched:', location.coords);
+          }
           const userDocRef = doc(db, 'users', user.uid);
           try {
             await setDoc(userDocRef, {
               location: {
                 latitude: location.coords.latitude,
                 longitude: location.coords.longitude,
-                timestamp: new Date().toISOString()
-              }
+                timestamp: location.timestamp || new Date().toISOString(), // Use location.timestamp or fallback
+              },
             }, { merge: true });
             console.log('Location updated in Firestore for UID:', user.uid);
             setLocationPermission(status);
@@ -222,7 +235,7 @@ export default function App() {
         console.log(`[${timestamp}] Initial notification tapped (cold start):`, data);
 
         if (data?.type === 'NicQuest') {
-          hasHandledInitialNotification.current = true; // ✅ prevent re-trigger
+          hasHandledInitialNotification.current = true;
           Alert.alert(
             `NicQuest from ${data.userId}`,
             'users profile photo here',
@@ -302,11 +315,18 @@ export default function App() {
       console.log('Requested permission status:', status);
     }
 
-    try {
-      const token = (await Notifications.getExpoPushTokenAsync({ projectId: Constants.expoConfig.extra?.eas?.projectId })).data;
-      console.log('Expo Push Token:', token);
-    } catch (error) {
-      console.log('Error getting push token:', error.message || error);
+    if (finalStatus === 'granted') {
+      try {
+        const token = (await Notifications.getExpoPushTokenAsync({ projectId: Constants.expoConfig.extra?.eas?.projectId })).data;
+        console.log(`${user?.displayName} Expo Push Token:`, token);
+        if (user) {
+          const userDocRef = doc(db, 'users', user.uid);
+          await setDoc(userDocRef, { expoPushToken: token }, { merge: true });
+          console.log('Push token updated in Firestore for UID:', user.uid);
+        }
+      } catch (error) {
+        console.log('Error getting push token:', error.message || error);
+      }
     }
 
     if (finalStatus !== 'granted') {

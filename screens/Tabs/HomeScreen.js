@@ -3,6 +3,7 @@ import { Text, View, TouchableOpacity, StyleSheet, Dimensions, ScrollView } from
 import MapView, { Marker } from 'react-native-maps';
 import { auth, db } from '../../firebase'; // Adjust path as needed
 import { collection, getDocs } from 'firebase/firestore';
+import { sendNicQuestNotification, calculateDistance } from '../../notificationUtils'; // Adjust path
 
 export default function HomeScreen({ user }) {
   const [nicAssists, setNicAssists] = useState([]);
@@ -21,12 +22,10 @@ export default function HomeScreen({ user }) {
         querySnapshot.forEach(docSnap => {
           const data = docSnap.data();
 
-          // Save current user's location for centering the map
           if (docSnap.id === currentUser.uid && data.location) {
             setUserLocation(data.location);
           }
 
-          // Add other users' active NicAssists from the array
           if (docSnap.id !== currentUser.uid && data.NicAssists) {
             data.NicAssists.forEach(assist => {
               if (assist.Active) {
@@ -41,7 +40,7 @@ export default function HomeScreen({ user }) {
         });
 
         setNicAssists(assists);
-        console.log('Loaded NicAssists:', assists); // Debug log
+        console.log('Loaded NicAssists:', assists);
       } catch (error) {
         console.error('Error loading NicAssist data:', error);
       }
@@ -50,8 +49,24 @@ export default function HomeScreen({ user }) {
     loadUserData();
   }, []);
 
-  const handleNicQuest = () => {
-    console.log('☎️ NicQuest button pressed');
+  const handleNicQuest = async () => {
+    console.log(`📲${userName} NicQuest button pressed`);
+    const currentUser = auth.currentUser;
+    if (!currentUser || !userLocation) return;
+
+    try {
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      usersSnapshot.forEach(async docSnap => {
+        if (docSnap.id !== currentUser.uid) {
+          const otherUserData = docSnap.data();
+          if (otherUserData.NicAssists && otherUserData.location && otherUserData.expoPushToken) {
+            await sendNicQuestNotification(userName, currentUser.uid, otherUserData, userLocation);
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error sending NicQuest:', error);
+    }
   };
 
   return (
@@ -81,6 +96,7 @@ export default function HomeScreen({ user }) {
                   longitude: assist.NicAssistLng,
                 }}
                 title={assist.NicAssistAddress}
+                pinColor="#FF6347" // Tomato red for other users' pins
               />
             ))}
             <Marker
@@ -90,7 +106,7 @@ export default function HomeScreen({ user }) {
                 longitude: userLocation.longitude,
               }}
               title="Your Location"
-              pinColor="#4d8a9b" 
+              pinColor="blue" // Blue for current user
             />
           </MapView>
         )}
