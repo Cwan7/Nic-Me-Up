@@ -34,9 +34,21 @@ TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, ({ data, error, executionIn
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const { data } = notification.request.content;
-    if (data?.type === 'NicQuest') {
+    if (data?.type === 'NicQuest' && data.userId !== auth.currentUser?.uid) {
       const timestamp = new Date().toISOString();
-      console.log(`[${timestamp}] Foreground NicQuest:`, data.userId);
+      const token = (await Notifications.getExpoPushTokenAsync({ projectId: Constants.expoConfig.extra?.eas?.projectId })).data;
+      console.log(`[${timestamp}] Handling NicQuest on ${Device.isDevice ? 'Phone' : 'Simulator'} for userId:`, data.userId, 'Received Token:', token, 'Notification Data:', data);
+      if (Device.isDevice) { // Only show alert on phone
+        Alert.alert(
+          `NicQuest from ${data.userId}`,
+          'Someone needs a pouch!',
+          [
+            { text: 'NicAssist', onPress: () => console.log('✅ NicAssist selected') },
+            { text: 'Decline', onPress: () => console.log('❌ Decline selected'), style: 'cancel' },
+          ],
+          { cancelable: true }
+        );
+      }
     }
     return {
       shouldShowBanner: true,
@@ -150,7 +162,7 @@ export default function App() {
 
           await setDoc(userDocRef, {
             flavors: userDoc.exists() && userDoc.data().flavors ? userDoc.data().flavors : "Random",
-            nicQuestDistance: userDoc.exists() && userDoc.data().nicQuestDistance ? userDoc.data().nicQuestDistance : 250,
+            nicQuestDistance: userDoc.exists() && userDoc.data().nicQuestDistance ? userDoc.data().nicQuestDistance : 400,
             notes: userDoc.exists() && userDoc.data().notes ? userDoc.data().notes : "Notes for NicQuest",
             photoURL: userDoc.exists() && userDoc.data().photoURL ? userDoc.data().photoURL : null,
             pouchType: userDoc.exists() && userDoc.data().pouchType ? userDoc.data().pouchType : "Random",
@@ -171,7 +183,6 @@ export default function App() {
           console.log('Location permission granted, fetching location');
           let location;
           if (!Device.isDevice) {
-            // Hardcode location for simulator (near Cwan's location in Denver)
             location = {
               coords: {
                 latitude: 39.7405,
@@ -190,7 +201,7 @@ export default function App() {
               location: {
                 latitude: location.coords.latitude,
                 longitude: location.coords.longitude,
-                timestamp: location.timestamp || new Date().toISOString(), // Use location.timestamp or fallback
+                timestamp: location.timestamp || new Date().toISOString(),
               },
             }, { merge: true });
             console.log('Location updated in Firestore for UID:', user.uid);
@@ -238,7 +249,7 @@ export default function App() {
           hasHandledInitialNotification.current = true;
           Alert.alert(
             `NicQuest from ${data.userId}`,
-            'users profile photo here',
+            'Someone needs a pouch!',
             [
               {
                 text: 'NicAssist',
@@ -265,13 +276,13 @@ export default function App() {
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const timestamp = new Date().toISOString();
-      console.log(`[${timestamp}] Notification tapped:`, response.notification.request.content.data);
+      console.log(`[${timestamp}] Notification tapped on ${Device.isDevice ? 'Phone' : 'Simulator'}:`, response.notification.request.content.data);
       const { data } = response.notification.request.content;
       if (data?.type === 'NicQuest') {
-        console.log(`[${timestamp}] Tapped NicQuest:`, data.userId);
+        console.log(`[${timestamp}] Tapped NicQuest on ${Device.isDevice ? 'Phone' : 'Simulator'}:`, data.userId);
         Alert.alert(
           `NicQuest from ${data.userId}`,
-          'users profile photo here',
+          'Someone needs a pouch!',
           [
             {
               text: 'NicAssist',

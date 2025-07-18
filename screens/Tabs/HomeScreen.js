@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Text, View, TouchableOpacity, StyleSheet, Dimensions, ScrollView } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
-import { auth, db } from '../../firebase'; // Adjust path as needed
+import { auth, db } from '../../firebase'; // Adjust path
 import { collection, getDocs } from 'firebase/firestore';
-import { sendNicQuestNotification, calculateDistance } from '../../notificationUtils'; // Adjust path
+import { sendNicQuestNotification } from '../../notificationUtils'; // Corrected path
 
 export default function HomeScreen({ user }) {
   const [nicAssists, setNicAssists] = useState([]);
@@ -56,14 +56,16 @@ export default function HomeScreen({ user }) {
 
     try {
       const usersSnapshot = await getDocs(collection(db, 'users'));
-      usersSnapshot.forEach(async docSnap => {
+      const promises = [];
+      usersSnapshot.forEach(docSnap => {
         if (docSnap.id !== currentUser.uid) {
           const otherUserData = docSnap.data();
           if (otherUserData.NicAssists && otherUserData.location && otherUserData.expoPushToken) {
-            await sendNicQuestNotification(userName, currentUser.uid, otherUserData, userLocation);
+            promises.push(sendNicQuestNotification(userName, currentUser.uid, otherUserData, userLocation));
           }
         }
       });
+      await Promise.all(promises); // Ensure all notifications are sent before proceeding
     } catch (error) {
       console.error('Error sending NicQuest:', error);
     }
@@ -91,22 +93,16 @@ export default function HomeScreen({ user }) {
             {nicAssists.map((assist, index) => (
               <Marker
                 key={index}
-                coordinate={{
-                  latitude: assist.NicAssistLat,
-                  longitude: assist.NicAssistLng,
-                }}
+                coordinate={{ latitude: assist.NicAssistLat, longitude: assist.NicAssistLng }}
                 title={assist.NicAssistAddress}
-                pinColor="#FF6347" // Tomato red for other users' pins
+                pinColor="#FF6347"
               />
             ))}
             <Marker
               key="currentUser"
-              coordinate={{
-                latitude: userLocation.latitude,
-                longitude: userLocation.longitude,
-              }}
+              coordinate={{ latitude: userLocation.latitude, longitude: userLocation.longitude }}
               title="Your Location"
-              pinColor="blue" // Blue for current user
+              pinColor="blue"
             />
           </MapView>
         )}
@@ -121,78 +117,21 @@ export default function HomeScreen({ user }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#dcdcdc',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    alignItems: 'center',
-    padding: 20,
-  },
-  welcomeText: {
-    fontSize: 20,
-    color: '#000000',
-    textAlign: 'center',
-    marginBottom: 10,
-    fontWeight: 'bold',
-  },
-  subText: {
-    fontSize: 16,
-    color: '#555555',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
+  container: { flex: 1, backgroundColor: '#dcdcdc' },
+  scrollView: { flex: 1 },
+  content: { alignItems: 'center', padding: 20 },
+  welcomeText: { fontSize: 20, color: '#000', textAlign: 'center', marginBottom: 10, fontWeight: 'bold' },
+  subText: { fontSize: 16, color: '#555', textAlign: 'center', marginBottom: 20 },
   nicQuestButton: {
-    marginVertical: 10,
-    borderRadius: 10, 
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    alignItems: 'center',
-    backgroundColor: '#60a8b8',
-    borderBottomWidth: 4,
-    borderBottomColor: '#4d8a9b',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    marginVertical: 10, borderRadius: 10, paddingVertical: 15, paddingHorizontal: 30,
+    alignItems: 'center', backgroundColor: '#60a8b8', borderBottomWidth: 4, borderBottomColor: '#4d8a9b',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4,
   },
-  text: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  map: {
-    width: Dimensions.get('window').width - 40,
-    height: 300,
-    marginVertical: 20,
-  },
-  activitySection: {
-    marginTop: 30,
-    alignItems: 'center',
-    width: '100%',
-  },
-  activityTitle: {
-    fontSize: 18,
-    color: '#000000',
-    fontWeight: '300',
-    marginBottom: 10,
-  },
-  divider: {
-    width: '90%',
-    height: 2,
-    backgroundColor: '#b7b7b7', 
-    marginBottom: 10,
-  },
-  activityPlaceholder: {
-    height: 50, 
-    width: '90%',
-    backgroundColor: '#f0f0f0', 
-  },
-  username: {
-    fontWeight: 'bold',
-    color: '#60a8b8', 
-  },
+  text: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  map: { width: Dimensions.get('window').width - 40, height: 300, marginVertical: 20 },
+  activitySection: { marginTop: 30, alignItems: 'center', width: '100%' },
+  activityTitle: { fontSize: 18, color: '#000', fontWeight: '300', marginBottom: 10 },
+  divider: { width: '90%', height: 2, backgroundColor: '#b7b7b7', marginBottom: 10 },
+  activityPlaceholder: { height: 50, width: '90%', backgroundColor: '#f0f0f0' },
+  username: { fontWeight: 'bold', color: '#60a8b8' },
 });
