@@ -281,7 +281,7 @@ export default function App() {
       if (data?.type === 'NicQuest') {
         console.log(`[${timestamp}] Tapped NicQuest on ${Device.isDevice ? 'Phone' : 'Simulator'}:`, data.userId);
         Alert.alert(
-          `NicQuest from ${data.userId}`,
+          `NicQuest from ${data.user?.displayName || 'Friend'}`,
           'Someone needs a pouch!',
           [
             {

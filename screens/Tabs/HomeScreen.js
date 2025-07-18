@@ -3,7 +3,64 @@ import { Text, View, TouchableOpacity, StyleSheet, Dimensions, ScrollView } from
 import MapView, { Marker } from 'react-native-maps';
 import { auth, db } from '../../firebase'; // Adjust path
 import { collection, getDocs } from 'firebase/firestore';
-import { sendNicQuestNotification } from '../../notificationUtils'; // Corrected path
+
+// Functions for Notifications/Distance
+export const sendNicQuestNotification = async (userName, currentUserId, otherUserData, userLocation, assist) => {
+  try {
+    const distance = calculateDistance(
+      userLocation.latitude,
+      userLocation.longitude,
+      assist.NicAssistLat,
+      assist.NicAssistLng
+    );
+
+    const questDistanceFeet = otherUserData.nicQuestDistance || 250; // Use user's nicQuestDistance or default 250ft
+    const questDistance = questDistanceFeet * 0.3048; // Convert to meters
+
+    console.log(`📏 Distance to ${otherUserData.username} NicAssistAddress (${assist.NicAssistAddress}): ${distance.toFixed(2)} meters`);
+
+    if (distance <= questDistance && otherUserData.expoPushToken) {
+      const message = {
+        to: otherUserData.expoPushToken,
+        sound: 'default',
+        title: `${userName} needs a pouch!`,
+        body: `Check ${assist.NicAssistAddress} for assistance.`,
+        data: { type: 'NicQuest', userId: currentUserId },
+      };
+
+      const response = await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Accept-Encoding': 'gzip, deflate',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(message),
+      });
+
+      const result = await response.json();
+      console.log('📬 Notification sent:', result);
+    } else {
+      console.log('⚠️ Not sending notification: distance too far or no expoPushToken');
+    }
+  } catch (error) {
+    console.error('❌ Error sending NicQuest notification:', error);
+  };
+};
+
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3;
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
 
 export default function HomeScreen({ user }) {
   const [nicAssists, setNicAssists] = useState([]);
@@ -56,18 +113,38 @@ export default function HomeScreen({ user }) {
 
     try {
       const usersSnapshot = await getDocs(collection(db, 'users'));
-      const promises = [];
+      let notifiedUsers = [];
+
       usersSnapshot.forEach(docSnap => {
         if (docSnap.id !== currentUser.uid) {
           const otherUserData = docSnap.data();
-          if (otherUserData.NicAssists && otherUserData.location && otherUserData.expoPushToken) {
-            promises.push(sendNicQuestNotification(userName, currentUser.uid, otherUserData, userLocation));
-          }
+          const activeAssists = otherUserData.NicAssists?.filter(assist => assist.Active) || [];
+
+          activeAssists.forEach(assist => {
+            const distance = calculateDistance(
+              userLocation.latitude,
+              userLocation.longitude,
+              assist.NicAssistLat,
+              assist.NicAssistLng
+            );
+            const questDistanceFeet = otherUserData.nicQuestDistance || 250; // Use user's setting
+            const questDistance = questDistanceFeet * 0.3048; // Convert to meters
+
+            if (distance <= questDistance && otherUserData.expoPushToken) {
+              notifiedUsers.push(otherUserData.username);
+              sendNicQuestNotification(userName, currentUser.uid, otherUserData, userLocation, assist);
+            }
+          });
         }
       });
-      await Promise.all(promises); // Ensure all notifications are sent before proceeding
+
+      if (notifiedUsers.length > 0) {
+        console.log(`📬 NicQuest sent to ${notifiedUsers.length} users: ${notifiedUsers.join(', ')}`);
+      } else {
+        console.log('⚠️ No nearby active NicAssists within quest distance');
+      }
     } catch (error) {
-      console.error('Error sending NicQuest:', error);
+      console.error('❌ Error sending NicQuest:', error);
     }
   };
 
