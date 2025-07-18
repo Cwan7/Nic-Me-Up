@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Text, View, TouchableOpacity, StyleSheet, Dimensions, ScrollView } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
-import { auth, db } from '../../firebase'; // Adjust path
+import { auth, db } from '../../firebase';
 import { collection, getDocs } from 'firebase/firestore';
 
 // Functions for Notifications/Distance
@@ -14,8 +14,8 @@ export const sendNicQuestNotification = async (userName, currentUserId, otherUse
       assist.NicAssistLng
     );
 
-    const questDistanceFeet = otherUserData.nicQuestDistance || 250; // Use user's nicQuestDistance or default 250ft
-    const questDistance = questDistanceFeet * 0.3048; // Convert to meters
+    const questDistanceFeet = otherUserData.nicQuestDistance || 250;
+    const questDistance = questDistanceFeet * 0.3048;
 
     console.log(`📏 Distance to ${otherUserData.username} NicAssistAddress (${assist.NicAssistAddress}): ${distance.toFixed(2)} meters`);
 
@@ -25,7 +25,7 @@ export const sendNicQuestNotification = async (userName, currentUserId, otherUse
         sound: 'default',
         title: `${userName} needs a pouch!`,
         body: `Check ${assist.NicAssistAddress} for assistance.`,
-        data: { type: 'NicQuest', userId: currentUserId },
+        data: { type: 'NicQuest', userId: currentUserId, displayName: userName, profilePhoto: auth.currentUser?.photoURL || null },
       };
 
       const response = await fetch('https://exp.host/--/api/v2/push/send', {
@@ -62,10 +62,11 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-export default function HomeScreen({ user }) {
+export default function HomeScreen({ route, navigation }) {
   const [nicAssists, setNicAssists] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
-  const userName = user?.displayName || 'Friend';
+  const { user } = route.params || { user: { displayName: 'Friend', uid: null } }; // Fallback to 'Friend' if params missing
+  const userName = user.displayName || 'Friend';
 
   useEffect(() => {
     const loadUserData = async () => {
@@ -127,8 +128,8 @@ export default function HomeScreen({ user }) {
               assist.NicAssistLat,
               assist.NicAssistLng
             );
-            const questDistanceFeet = otherUserData.nicQuestDistance || 250; // Use user's setting
-            const questDistance = questDistanceFeet * 0.3048; // Convert to meters
+            const questDistanceFeet = otherUserData.nicQuestDistance || 250;
+            const questDistance = questDistanceFeet * 0.3048;
 
             if (distance <= questDistance && otherUserData.expoPushToken) {
               notifiedUsers.push(otherUserData.username);
