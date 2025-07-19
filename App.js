@@ -4,7 +4,7 @@ import { auth, db } from './firebase';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -18,6 +18,7 @@ import CreateAccountScreen from './screens/CreateAccountScreen';
 import HomeScreen from './screens/Tabs/HomeScreen';
 import SettingsScreen from './screens/Tabs/SettingsScreen';
 import ProfileScreen from './screens/Tabs/ProfileScreen';
+import NicQuestWaitingScreen from './screens/NicQuestWaitingScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -68,6 +69,7 @@ export default function App() {
   const [locationPermission, setLocationPermission] = useState(null);
   const [notification, setNotification] = useState(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const isInitialMount = useRef(true);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -123,20 +125,23 @@ export default function App() {
   }, [locationPermission]);
 
   useEffect(() => {
-    // Handle initial notification on app launch (cold start)
-    const checkInitialNotification = async () => {
-      const response = await Notifications.getLastNotificationResponseAsync();
-      if (response && response.notification) {
-        const { data } = response.notification.request.content;
-        if (data?.type === 'NicQuest' && data.userId !== auth.currentUser?.uid) {
-          const timestamp = new Date().toISOString();
-          console.log(`[${timestamp}] Initial NicQuest on launch for userId:`, data.userId, 'Notification Data:', data);
-          setNotification(data);
-          setIsModalVisible(true);
+    // Handle initial notification on app launch (cold start) only
+    if (isInitialMount.current) {
+      const checkInitialNotification = async () => {
+        const response = await Notifications.getLastNotificationResponseAsync();
+        if (response && response.notification) {
+          const { data } = response.notification.request.content;
+          if (data?.type === 'NicQuest' && data.userId !== auth.currentUser?.uid) {
+            const timestamp = new Date().toISOString();
+            console.log(`[${timestamp}] Initial NicQuest on launch for userId:`, data.userId, 'Notification Data:', data);
+            setNotification(data);
+            setIsModalVisible(true);
+          }
         }
-      }
-    };
-    checkInitialNotification();
+        isInitialMount.current = false; // Set to false after first run
+      };
+      checkInitialNotification();
+    }
   }, []);
 
   useEffect(() => {
@@ -187,9 +192,12 @@ export default function App() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: true, header: () => <Header user={user} /> }}>
         {user ? (
-          <Stack.Screen name="Tabs" options={{ headerShown: false }}>
-            {() => <TabNavigator user={{ displayName: user?.displayName, uid: user?.uid }} />}
-          </Stack.Screen>
+          <>
+            <Stack.Screen name="Tabs" options={{ headerShown: false }}>
+              {() => <TabNavigator user={{ displayName: user?.displayName, uid: user?.uid }} />}
+            </Stack.Screen>
+            <Stack.Screen name="NicQuestWaiting" component={NicQuestWaitingScreen} />
+          </>
         ) : (
           <>
             <Stack.Screen name="Login" component={LoginScreen} />
@@ -205,16 +213,31 @@ export default function App() {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            {notification?.profilePhoto && (
-              <Image source={{ uri: notification.profilePhoto }} style={styles.profilePhoto} resizeMode="cover" />
-            )}
             <Text style={styles.modalTitle}>NicQuest from {notification?.displayName || 'Friend'}</Text>
+            {notification?.profilePhoto ? (
+              <View style={styles.outerZynBorder}>
+                <View style={styles.innerWhiteBorder}>
+                  <Image
+                    source={{ uri: notification.profilePhoto }}
+                    style={styles.profilePhoto}
+                    resizeMode="cover"
+                    onError={(e) => console.log('Image load error:', e.nativeEvent.error)}
+                  />
+                </View>
+              </View>
+            ) : (
+              <View style={styles.profilePlaceholder}>
+                <Text style={styles.placeholderText}>
+                  {(notification?.displayName && notification.displayName.charAt(0)) || 'F'}
+                </Text>
+              </View>
+            )}
             <Text style={styles.modalMessage}>Someone needs a pouch!</Text>
             <View style={styles.buttonContainer}>
-              <TouchableOpacity style={styles.button} onPress={() => handleModalAction('NicAssist')}>
+              <TouchableOpacity style={styles.buttonNicAssist} onPress={() => handleModalAction('NicAssist')}>
                 <Text style={styles.buttonText}>NicAssist</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.button} onPress={() => handleModalAction('Decline')}>
+              <TouchableOpacity style={styles.buttonDecline} onPress={() => handleModalAction('Decline')}>
                 <Text style={styles.buttonText}>Decline</Text>
               </TouchableOpacity>
             </View>
@@ -250,10 +273,55 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: '80%',
   },
-  profilePhoto: { width: 100, height: 100, borderRadius: 50, marginBottom: 10 },
+  outerZynBorder: {
+    padding: 6,
+    borderRadius: 60,
+    backgroundColor: '#cdcdcd',
+  },
+  innerWhiteBorder: {
+    padding: 3,
+    borderRadius: 54,
+    backgroundColor: '#fff',
+  },
+  profilePhoto: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#ccc',
+  },
+  profilePlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#eee',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderText: {
+    fontSize: 40,
+    fontWeight: 'bold',
+    color: '#60a8b8',
+  },
   modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 10 },
   modalMessage: { fontSize: 16, marginBottom: 20 },
   buttonContainer: { flexDirection: 'row', justifyContent: 'space-between', width: '100%' },
-  button: { backgroundColor: '#60a8b8', padding: 10, borderRadius: 5, marginHorizontal: 5 },
+  buttonNicAssist: {
+    backgroundColor: '#60a8b8',
+    alignItems: 'center',
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 4,
+    marginHorizontal: 5,
+  },
+  buttonDecline: {
+    backgroundColor: '#cdcdcd',
+    alignItems: 'center',
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 4,
+    marginHorizontal: 5,
+  },
   buttonText: { color: '#fff', fontSize: 16 },
 });

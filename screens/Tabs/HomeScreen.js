@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Text, View, TouchableOpacity, StyleSheet, Dimensions, ScrollView } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker, Circle } from 'react-native-maps';
 import { auth, db } from '../../firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 
 // Functions for Notifications/Distance
 export const sendNicQuestNotification = async (userName, currentUserId, otherUserData, userLocation, assist) => {
@@ -62,11 +63,14 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-export default function HomeScreen({ route, navigation }) {
+export default function HomeScreen({ route }) {
   const [nicAssists, setNicAssists] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
-  const { user } = route.params || { user: { displayName: 'Friend', uid: null } }; // Fallback to 'Friend' if params missing
+  const [questDistance, setQuestDistance] = useState(250); // Default 250 feet
+  const { user } = route.params || { user: { displayName: 'Friend', uid: null } };
   const userName = user.displayName || 'Friend';
+  const navigation = useNavigation();
+  const isFocused = useIsFocused();
 
   useEffect(() => {
     const loadUserData = async () => {
@@ -74,16 +78,18 @@ export default function HomeScreen({ route, navigation }) {
       if (!currentUser) return;
 
       try {
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        const userDoc = await getDoc(userDocRef);
+        const userData = userDoc.data();
+        if (userData && userData.location) {
+          setUserLocation(userData.location);
+          setQuestDistance(userData.nicQuestDistance || 250); // Update with user's NicQuestDistance
+        }
+
         const querySnapshot = await getDocs(collection(db, 'users'));
         const assists = [];
-
         querySnapshot.forEach(docSnap => {
           const data = docSnap.data();
-
-          if (docSnap.id === currentUser.uid && data.location) {
-            setUserLocation(data.location);
-          }
-
           if (docSnap.id !== currentUser.uid && data.NicAssists) {
             data.NicAssists.forEach(assist => {
               if (assist.Active) {
@@ -96,16 +102,15 @@ export default function HomeScreen({ route, navigation }) {
             });
           }
         });
-
         setNicAssists(assists);
         console.log('Loaded NicAssists:', assists);
       } catch (error) {
-        console.error('Error loading NicAssist data:', error);
+        console.error('Error loading user data:', error);
       }
     };
 
     loadUserData();
-  }, []);
+  }, [isFocused]);
 
   const handleNicQuest = async () => {
     console.log(`📲${userName} NicQuest button pressed`);
@@ -141,6 +146,7 @@ export default function HomeScreen({ route, navigation }) {
 
       if (notifiedUsers.length > 0) {
         console.log(`📬 NicQuest sent to ${notifiedUsers.length} users: ${notifiedUsers.join(', ')}`);
+        navigation.navigate('NicQuestWaiting', { userId: currentUser.uid, questDistance: questDistance });
       } else {
         console.log('⚠️ No nearby active NicAssists within quest distance');
       }
@@ -181,6 +187,13 @@ export default function HomeScreen({ route, navigation }) {
               coordinate={{ latitude: userLocation.latitude, longitude: userLocation.longitude }}
               title="Your Location"
               pinColor="blue"
+            />
+            <Circle
+              center={{ latitude: userLocation.latitude, longitude: userLocation.longitude }}
+              radius={questDistance * 0.3048} // Convert feet to meters
+              fillColor="rgba(0, 0, 255, 0.2)" // Blue circle with 20% opacity
+              strokeColor="rgba(0, 0, 255, 0.5)" // Blue outline with 50% opacity
+              strokeWidth={1}
             />
           </MapView>
         )}
