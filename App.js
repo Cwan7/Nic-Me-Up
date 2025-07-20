@@ -1,14 +1,14 @@
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 import React, { useState, useEffect, useRef } from 'react';
-import { NavigationContainer, useNavigation } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Modal, Image, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Modal, Image, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Device from 'expo-device';
@@ -19,20 +19,18 @@ import HomeScreen from './screens/Tabs/HomeScreen';
 import SettingsScreen from './screens/Tabs/SettingsScreen';
 import ProfileScreen from './screens/Tabs/ProfileScreen';
 import NicQuestWaitingScreen from './screens/NicQuestWaitingScreen';
+import NicAssistScreen from './screens/NicAssistScreen'; // Renamed
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-const Header = ({ user }) => {
-  const navigation = useNavigation();
+const Header = ({ user, navigation }) => {
   return (
     <SafeAreaView style={{ backgroundColor: '#fff' }} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>NicMeUp</Text>
         {user && (
-          <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
-            <Text style={styles.headerUser}>{user.displayName || 'User'}</Text>
-          </TouchableOpacity>
+          <Text style={styles.headerUser}>{user.displayName || 'User'}</Text>
         )}
       </View>
     </SafeAreaView>
@@ -179,24 +177,64 @@ export default function App() {
     };
   }, []);
 
-  const handleModalAction = (action) => {
+  const handleModalAction = async (action) => {
+    console.log('handleModalAction called with action:', action);
     if (action === 'NicAssist') {
-      console.log(`✅ NicAssist selected for user ${notification?.userId}`);
+      const userADocRef = doc(db, 'users', notification.userId);
+      const userADoc = await getDoc(userADocRef);
+      const userAData = userADoc.data();
+      console.log('UserA data:', userAData);
+
+      if (userAData?.nicQuestAssistedBy) {
+        Alert.alert('NicQuest Already Assisted!', 'This NicQuest has already been assisted by another user.');
+      } else {
+        try {
+          const userBDocRef = doc(db, 'users', auth.currentUser.uid);
+          await setDoc(userBDocRef, { nicAssistResponse: notification.userId }, { merge: true });
+          await updateDoc(userADocRef, { nicQuestAssistedBy: auth.currentUser.uid }, { merge: true });
+          console.log(`✅ NicAssist selected for user ${notification?.userId}`);
+          // Navigate both users to the assist screen
+          navigationRef.current?.navigate('NicAssist', { userAId: notification.userId, userBId: auth.currentUser.uid });
+        } catch (error) {
+          console.error('Error updating Firestore for NicAssist:', error);
+        }
+      }
     } else if (action === 'Decline') {
       console.log(`❌ Decline NicQuest for user ${notification?.userId}`);
     }
     setIsModalVisible(false);
   };
 
+  const navigationRef = useRef();
+
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: true, header: () => <Header user={user} /> }}>
+    <NavigationContainer ref={navigationRef}>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: true,
+          header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
+        }}
+      >
         {user ? (
           <>
             <Stack.Screen name="Tabs" options={{ headerShown: false }}>
               {() => <TabNavigator user={{ displayName: user?.displayName, uid: user?.uid }} />}
             </Stack.Screen>
-            <Stack.Screen name="NicQuestWaiting" component={NicQuestWaitingScreen} />
+            <Stack.Screen
+              name="NicQuestWaiting"
+              component={NicQuestWaitingScreen}
+              options={{
+                header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
+                headerRight: () => null,
+              }}
+            />
+            <Stack.Screen
+              name="NicAssist"
+              component={NicAssistScreen}
+              options={{
+                header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
+              }}
+            />
           </>
         ) : (
           <>

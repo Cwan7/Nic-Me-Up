@@ -1,30 +1,55 @@
-import React from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Image, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { db } from '../firebase';
+import { collection, onSnapshot, query, where, doc, updateDoc } from 'firebase/firestore';
 
 export default function NicQuestWaitingScreen({ route }) {
   const { userId, questDistance } = route.params;
   const navigation = useNavigation();
+  const [waiting, setWaiting] = useState(true);
 
-  const handleCancel = () => {
-    navigation.navigate('Tabs', { screen: 'Home' });
+  useEffect(() => {
+    const q = query(collection(db, 'users'), where('nicAssistResponse', '==', userId));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const hasAssister = snapshot.docs.length > 0;
+      setWaiting(!hasAssister);
+      if (hasAssister) {
+        console.log('Assister found, navigating to NicAssistScreen');
+        navigation.navigate('NicAssist', { userAId: userId, userBId: snapshot.docs[0].id });
+      }
+    }, (error) => {
+      console.error('Snapshot error:', error);
+    });
+
+    return () => unsubscribe();
+  }, [userId, navigation]);
+
+  const handleCancel = async () => {
+    try {
+      const userADocRef = doc(db, 'users', userId);
+      await updateDoc(userADocRef, { nicQuestAssistedBy: null }, { merge: true });
+      navigation.navigate('Tabs', { screen: 'Home' });
+    } catch (error) {
+      console.error('Error cancelling NicQuest:', error);
+    }
   };
 
   const handleUpdate = () => {
-    navigation.navigate('Tabs',{screen:'Settings'});
+    navigation.navigate('Settings');
   };
 
   return (
     <View style={styles.container}>
-      <Image
-        source={require('../assets/Logo3.png')} 
-        style={styles.logo}
-        resizeMode="contain"
-      />
-      <Text style={styles.message}>Waiting for NicAssist...</Text>
-      <ActivityIndicator size="large" color="#60a8b8" style={styles.loading} />
+      <Image source={require('../assets/Logo3.png')} style={styles.logo} resizeMode="contain" />
+      {waiting ? (
+        <>
+          <Text style={styles.message}>Waiting for NicAssist...</Text>
+          <ActivityIndicator size="large" color="#60a8b8" style={styles.loading} />
+        </>
+      ) : null}
       <View style={styles.distanceContainer}>
-        <Text style={styles.distance}>Distance: {questDistance} ft </Text>
+        <Text style={styles.distance}>Distance: {questDistance} ft</Text>
         <TouchableOpacity onPress={handleUpdate}>
           <Text style={styles.updateText}>Update</Text>
         </TouchableOpacity>
@@ -89,7 +114,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
   },
 });
