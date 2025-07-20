@@ -26,11 +26,16 @@ export default function NicAssistScreen({ route }) {
     try {
       console.log('Cancelling for user:', auth.currentUser?.uid, 'isUserA:', isUserA);
       if (isUserA) {
-        console.log('Updating userAId:', userAId);
-        await updateDoc(doc(db, 'users', userAId), { nicQuestAssistedBy: null }, { merge: true });
+        console.log('Updating userAId:', userAId, 'and userBId:', userBId);
+        const userADocRef = doc(db, 'users', userAId);
+        const userBDocRef = doc(db, 'users', userBId);
+        await updateDoc(userADocRef, { nicQuestAssistedBy: null }, { merge: true });
+        await updateDoc(userBDocRef, { nicAssistResponse: null }, { merge: true });
         navigation.navigate('Tabs', { screen: 'Home' });
       } else {
         console.log('Updating userBId:', userBId, 'and userAId:', userAId);
+        const userBDoc = await getDoc(doc(db, 'users', userBId));
+        console.log('UserB nicAssistResponse:', userBDoc.data()?.nicAssistResponse);
         await updateDoc(doc(db, 'users', userBId), { nicAssistResponse: null }, { merge: true });
         await updateDoc(doc(db, 'users', userAId), { nicQuestAssistedBy: null }, { merge: true });
         navigation.navigate('Tabs', { screen: 'Home' });

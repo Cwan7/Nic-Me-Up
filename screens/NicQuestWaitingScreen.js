@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { db } from '../firebase';
@@ -8,21 +8,34 @@ export default function NicQuestWaitingScreen({ route }) {
   const { userId, questDistance } = route.params;
   const navigation = useNavigation();
   const [waiting, setWaiting] = useState(true);
+  const unsubscribeRef = useRef(null); // Ref to store unsubscribe function
+  const hasNavigatedRef = useRef(false); // Flag to track navigation
 
   useEffect(() => {
-    const q = query(collection(db, 'users'), where('nicAssistResponse', '==', userId));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const hasAssister = snapshot.docs.length > 0;
-      setWaiting(!hasAssister);
-      if (hasAssister) {
-        console.log('Assister found, navigating to NicAssistScreen');
-        navigation.navigate('NicAssist', { userAId: userId, userBId: snapshot.docs[0].id });
-      }
-    }, (error) => {
-      console.error('Snapshot error:', error);
-    });
+    if (!unsubscribeRef.current) {
+      const q = query(collection(db, 'users'), where('nicAssistResponse', '==', userId));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const hasAssister = snapshot.docs.length > 0;
+        setWaiting(!hasAssister);
+        if (hasAssister && !hasNavigatedRef.current) { // Navigate only if not already navigated
+          console.log('Assister found, navigating to NicAssistScreen');
+          const userBId = snapshot.docs[0].id; // UserB's ID
+          navigation.navigate('NicAssist', { userAId: userId, userBId }); // Navigate UserA
+          hasNavigatedRef.current = true; // Set flag after navigation
+        }
+      }, (error) => {
+        console.error('Snapshot error:', error);
+      });
+      unsubscribeRef.current = unsubscribe; // Initialize unsubscribe
+    }
 
-    return () => unsubscribe();
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null; // Clear ref on unmount
+        hasNavigatedRef.current = false; // Reset navigation flag on unmount
+      }
+    };
   }, [userId, navigation]);
 
   const handleCancel = async () => {
@@ -30,6 +43,7 @@ export default function NicQuestWaitingScreen({ route }) {
       const userADocRef = doc(db, 'users', userId);
       await updateDoc(userADocRef, { nicQuestAssistedBy: null }, { merge: true });
       navigation.navigate('Tabs', { screen: 'Home' });
+      hasNavigatedRef.current = false; // Reset flag on cancel
     } catch (error) {
       console.error('Error cancelling NicQuest:', error);
     }
