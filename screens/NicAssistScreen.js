@@ -3,14 +3,14 @@ import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { db } from '../firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { useNavigation } from '@react-navigation/native';
-import { auth } from '../firebase'; // Ensure auth is imported
+import { auth } from '../firebase';
 
 export default function NicAssistScreen({ route }) {
   const { userAId, userBId } = route.params;
   const [userAData, setUserAData] = useState(null);
   const [userBData, setUserBData] = useState(null);
   const navigation = useNavigation();
-  const isUserA = auth.currentUser?.uid === userAId; // Use auth.currentUser.uid
+  const isUserA = auth.currentUser?.uid === userAId;
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -24,11 +24,15 @@ export default function NicAssistScreen({ route }) {
 
   const handleCancel = async () => {
     try {
+      console.log('Cancelling for user:', auth.currentUser?.uid, 'isUserA:', isUserA);
       if (isUserA) {
+        console.log('Updating userAId:', userAId);
         await updateDoc(doc(db, 'users', userAId), { nicQuestAssistedBy: null }, { merge: true });
         navigation.navigate('Tabs', { screen: 'Home' });
       } else {
+        console.log('Updating userBId:', userBId, 'and userAId:', userAId);
         await updateDoc(doc(db, 'users', userBId), { nicAssistResponse: null }, { merge: true });
+        await updateDoc(doc(db, 'users', userAId), { nicQuestAssistedBy: null }, { merge: true });
         navigation.navigate('Tabs', { screen: 'Home' });
       }
     } catch (error) {
