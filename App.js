@@ -179,34 +179,43 @@ export default function App() {
   }, []);
 
   const handleModalAction = async (action) => {
-    console.log('handleModalAction called with action:', action);
-    if (action === 'NicAssist' && !hasNavigated.current) {
-      const userADocRef = doc(db, 'users', notification.userId);
-      const userADoc = await getDoc(userADocRef);
-      const userAData = userADoc.data();
-      console.log('UserA data:', userAData);
+  console.log('handleModalAction called with action:', action);
+  if (action === 'NicAssist' && !hasNavigated.current) {
+    const userADocRef = doc(db, 'users', notification.userId);
+    const userADoc = await getDoc(userADocRef);
+    const userAData = userADoc.data();
+    console.log('UserA data:', userAData);
 
-      if (userAData?.nicQuestAssistedBy) {
-        Alert.alert('NicQuest Already Assisted!', 'This NicQuest has already been assisted by another user.');
-      } else {
-        try {
-          const userBDocRef = doc(db, 'users', auth.currentUser.uid);
-          await setDoc(userBDocRef, { nicAssistResponse: notification.userId }, { merge: true });
-          await updateDoc(userADocRef, { nicQuestAssistedBy: auth.currentUser.uid }, { merge: true });
-          console.log(`✅ NicAssist selected for user ${notification?.userId}`);
-          hasNavigated.current = true; // Set flag to prevent multiple navigations
-          navigationRef.current?.navigate('NicAssist', { userAId: notification.userId, userBId: auth.currentUser.uid });
-        } catch (error) {
-          console.error('Error updating Firestore for NicAssist:', error);
+    if (userAData?.nicQuestAssistedBy) {
+      Alert.alert('NicQuest Already Assisted!', 'This NicQuest has already been assisted by another user.');
+    } else {
+      try {
+        const sessionId = userAData?.sessionId;
+        if (!sessionId) {
+          console.error('❌ Could not retrieve sessionId from userA');
+          return;
         }
-      }
-    } else if (action === 'Decline') {
-      console.log(`❌ Decline NicQuest for user ${notification?.userId}`);
-    }
-    setIsModalVisible(false);
-    if (action === 'NicAssist') hasNavigated.current = false; // Reset flag after action completes
-  };
 
+        const userBDocRef = doc(db, 'users', auth.currentUser.uid);
+        await setDoc(userBDocRef, { nicAssistResponse: notification.userId }, { merge: true });
+        await updateDoc(userADocRef, { nicQuestAssistedBy: auth.currentUser.uid }, { merge: true });
+        console.log(`✅ NicAssist selected for user ${notification?.userId}`);
+        hasNavigated.current = true; 
+        navigationRef.current?.navigate('NicAssist', {
+          userAId: notification.userId,
+          userBId: auth.currentUser.uid,
+          sessionId,
+        });
+      } catch (error) {
+        console.error('Error updating Firestore for NicAssist:', error);
+      }
+    }
+  } else if (action === 'Decline') {
+    console.log(`❌ Decline NicQuest for user ${notification?.userId}`);
+  }
+  setIsModalVisible(false);
+  if (action === 'NicAssist') hasNavigated.current = false; // Reset flag after action completes
+};
   const navigationRef = useRef();
 
   return (

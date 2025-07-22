@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Text, View, TouchableOpacity, StyleSheet, Dimensions, ScrollView } from 'react-native';
 import MapView, { Marker, Circle } from 'react-native-maps';
 import { auth, db } from '../../firebase';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 
 // Functions for Notifications/Distance
@@ -46,7 +46,7 @@ export const sendNicQuestNotification = async (userName, currentUserId, otherUse
     }
   } catch (error) {
     console.error('❌ Error sending NicQuest notification:', error);
-  };
+  }
 };
 
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -103,7 +103,6 @@ export default function HomeScreen({ route }) {
           }
         });
         setNicAssists(assists);
-        console.log('Loaded NicAssists:', assists);
       } catch (error) {
         console.error('Error loading user data:', error);
       }
@@ -118,6 +117,11 @@ export default function HomeScreen({ route }) {
     if (!currentUser || !userLocation) return;
 
     try {
+      const sessionId = Date.now().toString(); // Generate sessionId here
+      const userADocRef = doc(db, 'users', currentUser.uid);
+      await updateDoc(userADocRef, { sessionId, sessionStatus: true }, { merge: true });
+      console.log('Session initialized with sessionId:', sessionId);
+
       const usersSnapshot = await getDocs(collection(db, 'users'));
       let notifiedUsers = [];
 
@@ -146,7 +150,7 @@ export default function HomeScreen({ route }) {
 
       if (notifiedUsers.length > 0) {
         console.log(`📬 NicQuest sent to ${notifiedUsers.length} users: ${notifiedUsers.join(', ')}`);
-        navigation.navigate('NicQuestWaiting', { userId: currentUser.uid, questDistance: questDistance });
+        navigation.navigate('NicQuestWaiting', { userId: currentUser.uid, questDistance, sessionId });
       } else {
         console.log('⚠️ No nearby active NicAssists within quest distance');
       }

@@ -2,52 +2,67 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Alert } from 'react-native';
 import { db } from '../firebase';
 import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native'; // Updated import
 import { auth } from '../firebase';
 
-export default function NicAssistScreen({ route }) {
-  const { userAId, userBId } = route.params;
+const CancelAlert = ({ visible, onOk, userId }) => {
+  const [isVisible, setIsVisible] = useState(visible);
+  useEffect(() => {
+    setIsVisible(visible);
+  }, [visible]);
+
+  if (!isVisible) return null;
+  return Alert.alert(
+    'NicQuest Canceled',
+    'The NicQuest session has been canceled.',
+    [{ text: 'OK', onPress: () => {
+      setIsVisible(false);
+      onOk();
+    }, style: 'default' }]
+  );
+};
+
+export default function NicAssistScreen() {
+  const route = useRoute(); // Use useRoute to get params
+  const { userAId, userBId, sessionId } = route.params || {};
+  const navigation = useNavigation();
+  const sessionIdRef = useRef(sessionId); // Persist sessionId
   const [userAData, setUserAData] = useState(null);
   const [userBData, setUserBData] = useState(null);
-  const navigation = useNavigation();
   const isUserA = auth.currentUser?.uid === userAId;
   const unsubscribeSession = useRef(null);
-  const hasNavigatedRef = useRef(false); // Flag to prevent multiple navigations
+  const hasNavigatedRef = useRef(false);
+  const [showAlert, setShowAlert] = useState(false);
 
   useEffect(() => {
     let unsubscribe;
 
     const init = async () => {
+      if (!sessionIdRef.current) {
+        console.error('SessionId is undefined, cannot initialize NicAssistScreen');
+        return;
+      }
+
       try {
         const userADoc = await getDoc(doc(db, 'users', userAId));
         const userBDoc = await getDoc(doc(db, 'users', userBId));
         setUserAData(userADoc.data());
         setUserBData(userBDoc.data());
 
-        // Set sessionStatus to true
         const userADocRef = doc(db, 'users', userAId);
         const userBDocRef = doc(db, 'users', userBId);
-        await updateDoc(userADocRef, { sessionStatus: true }, { merge: true });
-        await updateDoc(userBDocRef, { sessionStatus: true }, { merge: true });
+        await updateDoc(userADocRef, { sessionStatus: true, sessionId: sessionIdRef.current }, { merge: true });
+        await updateDoc(userBDocRef, { sessionStatus: true, sessionId: sessionIdRef.current }, { merge: true });
+        console.log('Session initialized with sessionId:', sessionIdRef.current);
 
-        // Listener for session status and alert
         const userDocRef = doc(db, 'users', auth.currentUser.uid);
         unsubscribe = onSnapshot(userDocRef, (docSnapshot) => {
-          if (docSnapshot.exists()) {
+          if (docSnapshot.exists() && !hasNavigatedRef.current) {
             const data = docSnapshot.data();
-            if (data.showAlert && !hasNavigatedRef.current) {
-              console.log('Showing alert for user:', auth.currentUser.uid);
-              Alert.alert(
-                'NicQuest Canceled',
-                'The NicQuest session has been canceled.',
-                [{ text: 'OK', onPress: async () => {
-                  const userDocRef = doc(db, 'users', auth.currentUser.uid);
-                  await updateDoc(userDocRef, { showAlert: false, sessionStatus: false }, { merge: true });
-                  console.log('Reset showAlert and sessionStatus to false for user:', auth.currentUser.uid);
-                  navigation.navigate('Tabs', { screen: 'Home' });
-                  hasNavigatedRef.current = true; // Set flag after navigation
-                }, style: 'default' }]
-              );
+            console.log('Listener fired for user:', auth.currentUser.uid, 'data.sessionId:', data.sessionId, 'current sessionId:', sessionIdRef.current);
+            if (data.showAlert && data.sessionId === sessionIdRef.current) {
+              console.log('Alert triggered for user:', auth.currentUser.uid);
+              setShowAlert(true);
             }
           }
         }, (error) => {
@@ -57,36 +72,46 @@ export default function NicAssistScreen({ route }) {
         console.error('Error initializing NicAssistScreen:', err);
       }
     };
+
     init();
 
     return () => {
       if (unsubscribe) unsubscribe();
-      hasNavigatedRef.current = false; // Reset flag on unmount
+      hasNavigatedRef.current = false;
+      setShowAlert(false);
     };
-  }, [userAId, userBId, navigation]);
+  }, [userAId, userBId]); // No sessionId in deps, use ref instead
 
   const handleCancel = async () => {
     try {
       console.log('Cancelling for user:', auth.currentUser?.uid, 'isUserA:', isUserA);
       const userADocRef = doc(db, 'users', userAId);
       const userBDocRef = doc(db, 'users', userBId);
+      const otherUserId = isUserA ? userBId : userAId;
       if (isUserA) {
         console.log('Updating userAId:', userAId, 'and userBId:', userBId);
-        await updateDoc(userADocRef, { nicQuestAssistedBy: null, sessionStatus: false }, { merge: true });
-        await updateDoc(userBDocRef, { nicAssistResponse: null, showAlert: true }, { merge: true });
-        navigation.navigate('Tabs', { screen: 'Home' }); // Navigate only UserA
+        await updateDoc(userADocRef, { nicQuestAssistedBy: null, sessionStatus: false, showAlert: false, sessionId: "" }, { merge: true });
+        await updateDoc(userBDocRef, { nicAssistResponse: null, showAlert: true, sessionId: sessionIdRef.current }, { merge: true });
+        navigation.navigate('Tabs', { screen: 'Home' });
       } else {
         console.log('Updating userBId:', userBId, 'and userAId:', userAId);
         const userBDoc = await getDoc(doc(db, 'users', userBId));
         console.log('UserB nicAssistResponse:', userBDoc.data()?.nicAssistResponse);
-        await updateDoc(userBDocRef, { nicAssistResponse: null, sessionStatus: false }, { merge: true });
-        await updateDoc(userADocRef, { nicQuestAssistedBy: null, showAlert: true }, { merge: true });
-        navigation.navigate('Tabs', { screen: 'Home' }); // Navigate only UserB
+        await updateDoc(userBDocRef, { nicAssistResponse: null, sessionStatus: false, showAlert: false, sessionId: "" }, { merge: true });
+        await updateDoc(userADocRef, { nicQuestAssistedBy: null, showAlert: true, sessionId: sessionIdRef.current }, { merge: true });
+        navigation.navigate('Tabs', { screen: 'Home' });
       }
-      // No sessionStatus listener navigation for the canceling user
     } catch (error) {
       console.error('Error cancelling:', error);
     }
+  };
+
+  const handleAlertOk = async () => {
+    const userDocRef = doc(db, 'users', auth.currentUser.uid);
+    await updateDoc(userDocRef, { showAlert: false, sessionStatus: false, sessionId: "" }, { merge: true });
+    console.log('Reset showAlert, sessionStatus, and sessionId to false/"" for user:', auth.currentUser.uid);
+    navigation.navigate('Tabs', { screen: 'Home' });
+    hasNavigatedRef.current = true;
   };
 
   return (
@@ -120,6 +145,7 @@ export default function NicAssistScreen({ route }) {
           )}
         </View>
       )}
+      <CancelAlert visible={showAlert} onOk={handleAlertOk} userId={auth.currentUser.uid} />
     </View>
   );
 }

@@ -5,7 +5,7 @@ import { db } from '../firebase';
 import { collection, onSnapshot, query, where, doc, updateDoc } from 'firebase/firestore';
 
 export default function NicQuestWaitingScreen({ route }) {
-  const { userId, questDistance } = route.params;
+  const { userId, questDistance, sessionId } = route.params;
   const navigation = useNavigation();
   const [waiting, setWaiting] = useState(true);
   const unsubscribeRef = useRef(null);
@@ -20,10 +20,10 @@ export default function NicQuestWaitingScreen({ route }) {
         if (hasAssister && !hasNavigatedRef.current) {
           console.log('Assister found, navigating to NicAssistScreen');
           const userBId = snapshot.docs[0].id;
-          // Set sessionStatus to true for UserA
+          // Update UserA's sessionStatus
           const userADocRef = doc(db, 'users', userId);
-          await updateDoc(userADocRef, { sessionStatus: false }, { merge: true });
-          navigation.navigate('NicAssist', { userAId: userId, userBId });
+          await updateDoc(userADocRef, { sessionStatus: true, sessionId }, { merge: true });
+          navigation.navigate('NicAssist', { userAId: userId, userBId, sessionId });
           hasNavigatedRef.current = true;
         }
       }, (error) => {
@@ -39,12 +39,12 @@ export default function NicQuestWaitingScreen({ route }) {
         hasNavigatedRef.current = false;
       }
     };
-  }, [userId, navigation]);
+  }, [userId, sessionId, navigation]);
 
   const handleCancel = async () => {
     try {
       const userADocRef = doc(db, 'users', userId);
-      await updateDoc(userADocRef, { nicQuestAssistedBy: null }, { merge: true });
+      await updateDoc(userADocRef, { nicQuestAssistedBy: null, sessionId: "", sessionStatus: false }, { merge: true });
       navigation.navigate('Tabs', { screen: 'Home' });
       hasNavigatedRef.current = false;
     } catch (error) {
