@@ -22,7 +22,7 @@ export default function NicQuestWaitingScreen({ route }) {
           const userBId = snapshot.docs[0].id;
           // Set sessionStatus to true for UserA
           const userADocRef = doc(db, 'users', userId);
-          await updateDoc(userADocRef, { sessionStatus: true }, { merge: true });
+          await updateDoc(userADocRef, { sessionStatus: false }, { merge: true });
           navigation.navigate('NicAssist', { userAId: userId, userBId });
           hasNavigatedRef.current = true;
         }

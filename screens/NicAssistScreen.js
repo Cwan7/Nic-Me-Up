@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Alert } from 'react-native';
 import { db } from '../firebase';
 import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { useNavigation } from '@react-navigation/native';
@@ -11,7 +11,7 @@ export default function NicAssistScreen({ route }) {
   const [userBData, setUserBData] = useState(null);
   const navigation = useNavigation();
   const isUserA = auth.currentUser?.uid === userAId;
-  const [unsubscribeSession, setUnsubscribeSession] = useState(null);
+  const unsubscribeSession = useRef(null);
   const hasNavigatedRef = useRef(false); // Flag to prevent multiple navigations
 
   useEffect(() => {
@@ -30,13 +30,25 @@ export default function NicAssistScreen({ route }) {
         await updateDoc(userADocRef, { sessionStatus: true }, { merge: true });
         await updateDoc(userBDocRef, { sessionStatus: true }, { merge: true });
 
-        // 🔐 Only add listener after we've finished updating
+        // Listener for session status and alert
         const userDocRef = doc(db, 'users', auth.currentUser.uid);
         unsubscribe = onSnapshot(userDocRef, (docSnapshot) => {
-          if (docSnapshot.exists() && docSnapshot.data().sessionStatus === false && !hasNavigatedRef.current) {
-            console.log('Session ended. Navigating home.');
-            navigation.navigate('Tabs', { screen: 'Home' });
-            hasNavigatedRef.current = true; // Set flag after navigation
+          if (docSnapshot.exists()) {
+            const data = docSnapshot.data();
+            if (data.showAlert && !hasNavigatedRef.current) {
+              console.log('Showing alert for user:', auth.currentUser.uid);
+              Alert.alert(
+                'NicQuest Canceled',
+                'The NicQuest session has been canceled.',
+                [{ text: 'OK', onPress: async () => {
+                  const userDocRef = doc(db, 'users', auth.currentUser.uid);
+                  await updateDoc(userDocRef, { showAlert: false, sessionStatus: false }, { merge: true });
+                  console.log('Reset showAlert and sessionStatus to false for user:', auth.currentUser.uid);
+                  navigation.navigate('Tabs', { screen: 'Home' });
+                  hasNavigatedRef.current = true; // Set flag after navigation
+                }, style: 'default' }]
+              );
+            }
           }
         }, (error) => {
           console.error('Session status listener error:', error);
@@ -61,15 +73,17 @@ export default function NicAssistScreen({ route }) {
       if (isUserA) {
         console.log('Updating userAId:', userAId, 'and userBId:', userBId);
         await updateDoc(userADocRef, { nicQuestAssistedBy: null, sessionStatus: false }, { merge: true });
-        await updateDoc(userBDocRef, { nicAssistResponse: null, sessionStatus: false }, { merge: true });
+        await updateDoc(userBDocRef, { nicAssistResponse: null, showAlert: true }, { merge: true });
+        navigation.navigate('Tabs', { screen: 'Home' }); // Navigate only UserA
       } else {
         console.log('Updating userBId:', userBId, 'and userAId:', userAId);
         const userBDoc = await getDoc(doc(db, 'users', userBId));
         console.log('UserB nicAssistResponse:', userBDoc.data()?.nicAssistResponse);
         await updateDoc(userBDocRef, { nicAssistResponse: null, sessionStatus: false }, { merge: true });
-        await updateDoc(userADocRef, { nicQuestAssistedBy: null, sessionStatus: false }, { merge: true });
+        await updateDoc(userADocRef, { nicQuestAssistedBy: null, showAlert: true }, { merge: true });
+        navigation.navigate('Tabs', { screen: 'Home' }); // Navigate only UserB
       }
-      // Navigation will be handled by the sessionStatus listener
+      // No sessionStatus listener navigation for the canceling user
     } catch (error) {
       console.error('Error cancelling:', error);
     }
