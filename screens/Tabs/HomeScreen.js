@@ -94,6 +94,7 @@ export default function HomeScreen({ route }) {
             data.NicAssists.forEach(assist => {
               if (assist.Active) {
                 assists.push({
+                  userId: docSnap.id,
                   NicAssistAddress: assist.NicAssistAddress,
                   NicAssistLat: assist.NicAssistLat,
                   NicAssistLng: assist.NicAssistLng,
@@ -141,7 +142,7 @@ export default function HomeScreen({ route }) {
             const questDistance = questDistanceFeet * 0.3048;
 
             if (distance <= questDistance && otherUserData.expoPushToken) {
-              notifiedUsers.push(otherUserData.username);
+              notifiedUsers.push({ userId: docSnap.id, assist });
               sendNicQuestNotification(userName, currentUser.uid, otherUserData, userLocation, assist);
             }
           });
@@ -149,8 +150,16 @@ export default function HomeScreen({ route }) {
       });
 
       if (notifiedUsers.length > 0) {
-        console.log(`📬 NicQuest sent to ${notifiedUsers.length} users: ${notifiedUsers.join(', ')}`);
-        navigation.navigate('NicQuestWaiting', { userId: currentUser.uid, questDistance, sessionId });
+        console.log(`📬 NicQuest sent to ${notifiedUsers.length} users: ${notifiedUsers.map(n => n.userId).join(', ')}`);
+        // Pass the first notified user's assist location as the target
+        const targetAssist = notifiedUsers[0].assist;
+        navigation.navigate('NicQuestWaiting', {
+          userId: currentUser.uid,
+          questDistance,
+          sessionId,
+          nicAssistLat: targetAssist.NicAssistLat,
+          nicAssistLng: targetAssist.NicAssistLng,
+        });
       } else {
         console.log('⚠️ No nearby active NicAssists within quest distance');
       }

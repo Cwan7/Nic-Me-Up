@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Alert, Dimensions } from 'react-native'; // Added Dimensions
 import { db } from '../firebase';
 import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { auth } from '../firebase';
+import MapView, { Marker } from 'react-native-maps';
 
 const CancelAlert = ({ visible, onOk, userId }) => {
   const [isVisible, setIsVisible] = useState(visible);
@@ -115,55 +116,77 @@ export default function NicAssistScreen() {
   };
 
   return (
-  <View style={styles.container}>
-    {userAData && userBData && (
-  <View style={styles.card}>
-    <Text style={styles.title}>{isUserA ? 'NicQuest' : 'NicAssist'} Session</Text>
-    <View style={styles.usersContainer}>
-      {/* User A */}
-      <View style={styles.userCard}>
-        <Image source={{ uri: userAData.photoURL }} style={styles.userPhoto} />
-        <Text style={styles.roleLabel}>{isUserA ? 'You' : 'NicQuest'}</Text>
-        <Text style={styles.username}>{userAData.username}</Text>
-      </View>
-
-      {/* Divider */}
-      <View style={styles.vsContainer}>
-        <Text style={styles.vsText}>→</Text>
-      </View>
-
-      {/* User B */}
-      <View style={styles.userCard}>
-        <Image source={{ uri: userBData.photoURL }} style={styles.userPhoto} />
-        <Text style={styles.roleLabel}>{isUserA ? 'NicAssist' : 'You'}</Text>
-        <Text style={styles.username}>{userBData.username}</Text>
-      </View>
-    </View>
-
-    {/* PonyBoy's Info */}
-    <View style={styles.detailsContainer}>
-      <Text style={styles.infoHeader}>{userBData.username}’s Info</Text>
-      <View style={styles.data}>
+    <View style={styles.container}>
+      {userAData && userBData && (
         <View>
-            <Text style={styles.detail}>Pouch Type: <Text style={styles.detailValue}>{userBData.pouchType}</Text></Text>
-            <Text style={styles.detail}>Strength: <Text style={styles.detailValue}>{userBData.strength}</Text></Text>
+          <View style={styles.card}>
+            <Text style={styles.title}>{isUserA ? 'NicQuest' : 'NicAssist'} Session</Text>
+            <View style={styles.usersContainer}>
+              {/* User A */}
+              <View style={styles.userCard}>
+                <Image source={{ uri: userAData.photoURL }} style={styles.userPhoto} />
+                <Text style={styles.roleLabel}>{isUserA ? 'You' : 'NicQuest'}</Text>
+                <Text style={styles.username}>{userAData.username}</Text>
+              </View>
+
+              {/* Divider */}
+              <View style={styles.vsContainer}>
+                <Text style={styles.vsText}>→</Text>
+              </View>
+
+              {/* User B */}
+              <View style={styles.userCard}>
+                <Image source={{ uri: userBData.photoURL }} style={styles.userPhoto} />
+                <Text style={styles.roleLabel}>{isUserA ? 'NicAssist' : 'You'}</Text>
+                <Text style={styles.username}>{userBData.username}</Text>
+              </View>
+            </View>
+
+            {/* PonyBoy's Info */}
+            <View style={styles.detailsContainer}>
+              <Text style={styles.infoHeader}>{userBData.username}’s Info</Text>
+              <View style={styles.data}>
+                <View>
+                  <Text style={styles.detail}>Pouch Type: <Text style={styles.detailValue}>{userBData.pouchType}</Text></Text>
+                  <Text style={styles.detail}>Strength: <Text style={styles.detailValue}>{userBData.strength}</Text></Text>
+                </View>
+                <View>
+                  <Text style={styles.detail}>Flavors: <Text style={styles.detailValue}>{userBData.flavors}</Text></Text>
+                  <Text style={styles.detail}>Notes: <Text style={styles.detailValue}>{userBData.notes}</Text></Text>
+                </View>
+              </View>
+            </View>
+          </View>
+          <MapView
+            style={styles.map}
+            initialRegion={{
+              latitude: (userAData.location.latitude + userBData.location.latitude) / 2,
+              longitude: (userAData.location.longitude + userBData.location.longitude) / 2,
+              latitudeDelta: 0.001, // Reduced for closer zoom
+              longitudeDelta: 0.001, // Reduced for closer zoom
+            }}
+          >
+            <Marker
+              key="userA"
+              coordinate={{ latitude: userAData.location.latitude, longitude: userAData.location.longitude }}
+              title="Your Location"
+              pinColor="blue"
+            />
+            <Marker
+              key="userB"
+              coordinate={{ latitude: userBData.location.latitude, longitude: userBData.location.longitude }}
+              title={userBData.username + "'s Location"}
+              pinColor="#FF6347"
+            />
+          </MapView>
         </View>
-        <View>
-            <Text style={styles.detail}>Flavors: <Text style={styles.detailValue}>{userBData.flavors}</Text></Text>
-            <Text style={styles.detail}>Notes: <Text style={styles.detailValue}>{userBData.notes}</Text></Text>
-        </View>
-      </View>
+      )}
+      <TouchableOpacity style={styles.bottomButton} onPress={handleCancel}>
+        <Text style={styles.buttonText}>{isUserA ? 'Cancel NicQuest' : 'Cancel NicAssist'}</Text>
+      </TouchableOpacity>
+      <CancelAlert visible={showAlert} onOk={handleAlertOk} userId={auth.currentUser.uid} />
     </View>
-  </View>
-)}
-    <TouchableOpacity style={styles.bottomButton} onPress={handleCancel}>
-      <Text style={styles.buttonText}>{isUserA ? 'Cancel NicQuest' : 'Cancel NicAssist'}</Text>
-    </TouchableOpacity>
-
-    <CancelAlert visible={showAlert} onOk={handleAlertOk} userId={auth.currentUser.uid} />
-  </View>
-);
-
+  );
 }
 
 const styles = StyleSheet.create({
@@ -268,6 +291,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  map: {
+    width: Dimensions.get('window').width - 40,
+    height: 300,
+    marginBottom: 20,
   },
 });
 
