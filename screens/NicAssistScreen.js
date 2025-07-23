@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Alert } from 'react-native';
 import { db } from '../firebase';
 import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
-import { useNavigation, useRoute } from '@react-navigation/native'; // Updated import
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { auth } from '../firebase';
 
 const CancelAlert = ({ visible, onOk, userId }) => {
@@ -23,10 +23,10 @@ const CancelAlert = ({ visible, onOk, userId }) => {
 };
 
 export default function NicAssistScreen() {
-  const route = useRoute(); // Use useRoute to get params
+  const route = useRoute();
   const { userAId, userBId, sessionId } = route.params || {};
   const navigation = useNavigation();
-  const sessionIdRef = useRef(sessionId); // Persist sessionId
+  const sessionIdRef = useRef(sessionId);
   const [userAData, setUserAData] = useState(null);
   const [userBData, setUserBData] = useState(null);
   const isUserA = auth.currentUser?.uid === userAId;
@@ -80,7 +80,7 @@ export default function NicAssistScreen() {
       hasNavigatedRef.current = false;
       setShowAlert(false);
     };
-  }, [userAId, userBId]); // No sessionId in deps, use ref instead
+  }, [userAId, userBId]);
 
   const handleCancel = async () => {
     try {
@@ -115,51 +115,160 @@ export default function NicAssistScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>NicAssist Session</Text>
-      {userAData && (
-        <View style={styles.userInfo}>
-          <Text style={styles.userName}>NicQuest: {userAData.username}</Text>
-          {userAData.photoURL && <Image source={{ uri: userAData.photoURL }} style={styles.userPhoto} />}
-          <Text>Flavors: {userAData.flavors}</Text>
-          <Text>Pouch Type: {userAData.pouchType}</Text>
-          <Text>Strength: {userAData.strength}</Text>
-          {isUserA && (
-            <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
-              <Text style={styles.buttonText}>Cancel NicQuest</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-      {userBData && (
-        <View style={styles.userInfo}>
-          <Text style={styles.userName}>NicAssist: {userBData.username}</Text>
-          {userBData.photoURL && <Image source={{ uri: userBData.photoURL }} style={styles.userPhoto} />}
-          <Text>Flavors: {userBData.flavors}</Text>
-          <Text>Pouch Type: {userBData.pouchType}</Text>
-          <Text>Strength: {userBData.strength}</Text>
-          {!isUserA && (
-            <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
-              <Text style={styles.buttonText}>Cancel NicAssist</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-      <CancelAlert visible={showAlert} onOk={handleAlertOk} userId={auth.currentUser.uid} />
+  <View style={styles.container}>
+    {userAData && userBData && (
+  <View style={styles.card}>
+    <Text style={styles.title}>{isUserA ? 'NicQuest' : 'NicAssist'} Session</Text>
+    <View style={styles.usersContainer}>
+      {/* User A */}
+      <View style={styles.userCard}>
+        <Image source={{ uri: userAData.photoURL }} style={styles.userPhoto} />
+        <Text style={styles.roleLabel}>{isUserA ? 'You' : 'NicQuest'}</Text>
+        <Text style={styles.username}>{userAData.username}</Text>
+      </View>
+
+      {/* Divider */}
+      <View style={styles.vsContainer}>
+        <Text style={styles.vsText}>→</Text>
+      </View>
+
+      {/* User B */}
+      <View style={styles.userCard}>
+        <Image source={{ uri: userBData.photoURL }} style={styles.userPhoto} />
+        <Text style={styles.roleLabel}>{isUserA ? 'NicAssist' : 'You'}</Text>
+        <Text style={styles.username}>{userBData.username}</Text>
+      </View>
     </View>
-  );
+
+    {/* PonyBoy's Info */}
+    <View style={styles.detailsContainer}>
+      <Text style={styles.infoHeader}>{userBData.username}’s Info</Text>
+      <View style={styles.data}>
+        <View>
+            <Text style={styles.detail}>Pouch Type: <Text style={styles.detailValue}>{userBData.pouchType}</Text></Text>
+            <Text style={styles.detail}>Strength: <Text style={styles.detailValue}>{userBData.strength}</Text></Text>
+        </View>
+        <View>
+            <Text style={styles.detail}>Flavors: <Text style={styles.detailValue}>{userBData.flavors}</Text></Text>
+            <Text style={styles.detail}>Notes: <Text style={styles.detailValue}>{userBData.notes}</Text></Text>
+        </View>
+      </View>
+    </View>
+  </View>
+)}
+    <TouchableOpacity style={styles.bottomButton} onPress={handleCancel}>
+      <Text style={styles.buttonText}>{isUserA ? 'Cancel NicQuest' : 'Cancel NicAssist'}</Text>
+    </TouchableOpacity>
+
+    <CancelAlert visible={showAlert} onOk={handleAlertOk} userId={auth.currentUser.uid} />
+  </View>
+);
+
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', backgroundColor: '#dcdcdc', padding: 20 },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20 },
-  userInfo: { alignItems: 'center', marginVertical: 10 },
-  userName: { fontSize: 20, fontWeight: 'bold' },
-  userPhoto: { width: 100, height: 100, borderRadius: 50, marginVertical: 10 },
-  cancelButton: {
-    marginVertical: 10, borderRadius: 5, paddingVertical: 10, paddingHorizontal: 20,
-    alignItems: 'center', backgroundColor: '#60a8b8', borderBottomWidth: 2,
+  container: {
+    flex: 1,
+    backgroundColor: '#dcdcdc',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 10,
+    color: '#60a8b8',
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    marginBottom: 20,
+  },
+  usersContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  userCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '40%',
+  },
+  userPhoto: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: 6,
+    backgroundColor: '#e0e0e0',
+  },
+  username: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#222',
+  },
+  roleLabel: {
+    fontSize: 12,
+    color: '#888',
+    marginBottom: 2,
+  },
+  vsContainer: {
+    width: '20%',
+    alignItems: 'center',
+  },
+  vsText: {
+    fontSize: 45,
+    color: '#60a8b8',
+  },
+  detailsContainer: {
+    marginTop: 24,
+    alignItems: 'center',
+    width: '100%',
+  },
+  infoHeader: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#2b2b2b',
+    marginBottom: 10,
+    textTransform: 'capitalize',
+  },
+  data: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 10,
+  },
+  detail: {
+    fontSize: 14,
+    color: '#555',
+    marginVertical: 6,
+  },
+  detailValue: {
+    fontWeight: '600',
+    color: '#333',
+  },
+  bottomButton: {
+    position: 'absolute',
+    bottom: 30,
+    alignSelf: 'center',
+    width: '80%',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#60a8b8',
+    borderBottomWidth: 2,
     borderBottomColor: '#4d8a9b',
   },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
 });
+
+
