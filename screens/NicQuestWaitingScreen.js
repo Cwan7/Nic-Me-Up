@@ -5,41 +5,46 @@ import { db } from '../firebase';
 import { collection, onSnapshot, query, where, doc, updateDoc } from 'firebase/firestore';
 
 export default function NicQuestWaitingScreen({ route }) {
-  const { userId, questDistance, sessionId } = route.params;
+  const { userId, questDistance, sessionId, nicAssistLat, nicAssistLng } = route.params;
   const navigation = useNavigation();
   const [waiting, setWaiting] = useState(true);
   const unsubscribeRef = useRef(null);
   const hasNavigatedRef = useRef(false);
 
   useEffect(() => {
-    if (!unsubscribeRef.current) {
-      const q = query(collection(db, 'users'), where('nicAssistResponse', '==', userId));
-      const unsubscribe = onSnapshot(q, async (snapshot) => {
-        const hasAssister = snapshot.docs.length > 0;
-        setWaiting(!hasAssister);
-        if (hasAssister && !hasNavigatedRef.current) {
-          console.log('Assister found, navigating to NicAssistScreen');
-          const userBId = snapshot.docs[0].id;
-          // Update UserA's sessionStatus
-          const userADocRef = doc(db, 'users', userId);
-          await updateDoc(userADocRef, { sessionStatus: true, sessionId }, { merge: true });
-          navigation.navigate('NicAssist', { userAId: userId, userBId, sessionId });
-          hasNavigatedRef.current = true;
-        }
-      }, (error) => {
-        console.error('Snapshot error:', error);
-      });
-      unsubscribeRef.current = unsubscribe;
-    }
-
-    return () => {
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-        unsubscribeRef.current = null;
-        hasNavigatedRef.current = false;
+  if (!unsubscribeRef.current) {
+    const q = query(collection(db, 'users'), where('nicAssistResponse', '==', userId));
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      const hasAssister = snapshot.docs.length > 0;
+      setWaiting(!hasAssister);
+      if (hasAssister && !hasNavigatedRef.current) {
+        console.log('Assister found, navigating to NicAssistScreen');
+        const userBId = snapshot.docs[0].id;
+        const userADocRef = doc(db, 'users', userId);
+        await updateDoc(userADocRef, { sessionStatus: true, sessionId }, { merge: true });
+        navigation.navigate('NicAssist', { 
+          userAId: userId, 
+          userBId, 
+          sessionId,
+          nicAssistLat: route.params.nicAssistLat,
+          nicAssistLng: route.params.nicAssistLng,
+        });
+        hasNavigatedRef.current = true;
       }
-    };
-  }, [userId, sessionId, navigation]);
+    }, (error) => {
+      console.error('Snapshot error:', error);
+    });
+    unsubscribeRef.current = unsubscribe;
+  }
+
+  return () => {
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+      unsubscribeRef.current = null;
+      hasNavigatedRef.current = false;
+    }
+  };
+}, [userId, sessionId, navigation, nicAssistLat, nicAssistLng]);
 
   const handleCancel = async () => {
     try {

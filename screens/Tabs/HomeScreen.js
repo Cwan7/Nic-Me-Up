@@ -26,7 +26,14 @@ export const sendNicQuestNotification = async (userName, currentUserId, otherUse
         sound: 'default',
         title: `${userName} needs a pouch!`,
         body: `Check ${assist.NicAssistAddress} for assistance.`,
-        data: { type: 'NicQuest', userId: currentUserId, displayName: userName, profilePhoto: auth.currentUser?.photoURL || null },
+        data: { 
+          type: 'NicQuest', 
+          userId: currentUserId, 
+          displayName: userName, 
+          profilePhoto: auth.currentUser?.photoURL || null,
+          nicAssistLat: assist.NicAssistLat,
+          nicAssistLng: assist.NicAssistLng,
+        },
       };
 
       const response = await fetch('https://exp.host/--/api/v2/push/send', {
@@ -113,60 +120,59 @@ export default function HomeScreen({ route }) {
   }, [isFocused]);
 
   const handleNicQuest = async () => {
-    console.log(`📲${userName} NicQuest button pressed`);
-    const currentUser = auth.currentUser;
-    if (!currentUser || !userLocation) return;
+  console.log(`📲${userName} NicQuest button pressed`);
+  const currentUser = auth.currentUser;
+  if (!currentUser || !userLocation) return;
 
-    try {
-      const sessionId = Date.now().toString(); // Generate sessionId here
-      const userADocRef = doc(db, 'users', currentUser.uid);
-      await updateDoc(userADocRef, { sessionId, sessionStatus: true }, { merge: true });
-      console.log('Session initialized with sessionId:', sessionId);
+  try {
+    const sessionId = Date.now().toString(); 
+    const userADocRef = doc(db, 'users', currentUser.uid);
+    await updateDoc(userADocRef, { sessionId, sessionStatus: true }, { merge: true });
+    console.log('Session initialized with sessionId:', sessionId);
 
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      let notifiedUsers = [];
+    const usersSnapshot = await getDocs(collection(db, 'users'));
+    let notifiedUsers = [];
 
-      usersSnapshot.forEach(docSnap => {
-        if (docSnap.id !== currentUser.uid) {
-          const otherUserData = docSnap.data();
-          const activeAssists = otherUserData.NicAssists?.filter(assist => assist.Active) || [];
+    usersSnapshot.forEach(docSnap => {
+      if (docSnap.id !== currentUser.uid) {
+        const otherUserData = docSnap.data();
+        const activeAssists = otherUserData.NicAssists?.filter(assist => assist.Active) || [];
 
-          activeAssists.forEach(assist => {
-            const distance = calculateDistance(
-              userLocation.latitude,
-              userLocation.longitude,
-              assist.NicAssistLat,
-              assist.NicAssistLng
-            );
-            const questDistanceFeet = otherUserData.nicQuestDistance || 250;
-            const questDistance = questDistanceFeet * 0.3048;
+        activeAssists.forEach(assist => {
+          const distance = calculateDistance(
+            userLocation.latitude,
+            userLocation.longitude,
+            assist.NicAssistLat,
+            assist.NicAssistLng
+          );
+          const questDistanceFeet = otherUserData.nicQuestDistance || 250;
+          const questDistance = questDistanceFeet * 0.3048;
 
-            if (distance <= questDistance && otherUserData.expoPushToken) {
-              notifiedUsers.push({ userId: docSnap.id, assist });
-              sendNicQuestNotification(userName, currentUser.uid, otherUserData, userLocation, assist);
-            }
-          });
-        }
-      });
-
-      if (notifiedUsers.length > 0) {
-        console.log(`📬 NicQuest sent to ${notifiedUsers.length} users: ${notifiedUsers.map(n => n.userId).join(', ')}`);
-        // Pass the first notified user's assist location as the target
-        const targetAssist = notifiedUsers[0].assist;
-        navigation.navigate('NicQuestWaiting', {
-          userId: currentUser.uid,
-          questDistance,
-          sessionId,
-          nicAssistLat: targetAssist.NicAssistLat,
-          nicAssistLng: targetAssist.NicAssistLng,
+          if (distance <= questDistance && otherUserData.expoPushToken) {
+            notifiedUsers.push({ userId: docSnap.id, assist });
+            sendNicQuestNotification(userName, currentUser.uid, otherUserData, userLocation, assist);
+          }
         });
-      } else {
-        console.log('⚠️ No nearby active NicAssists within quest distance');
       }
-    } catch (error) {
-      console.error('❌ Error sending NicQuest:', error);
+    });
+
+    if (notifiedUsers.length > 0) {
+      console.log(`📬 NicQuest sent to ${notifiedUsers.length} users: ${notifiedUsers.map(n => n.userId).join(', ')}`);
+      const targetAssist = notifiedUsers[0].assist;
+      navigation.navigate('NicQuestWaiting', {
+        userId: currentUser.uid,
+        questDistance,
+        sessionId,
+        nicAssistLat: targetAssist.NicAssistLat,
+        nicAssistLng: targetAssist.NicAssistLng,
+      });
+    } else {
+      console.log('⚠️ No nearby active NicAssists within quest distance');
     }
-  };
+  } catch (error) {
+    console.error('❌ Error sending NicQuest:', error);
+  }
+};
 
   return (
     <View style={styles.container}>

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Alert, Dimensions } from 'react-native'; // Added Dimensions
+import { View, Text, StyleSheet, Image, TouchableOpacity, Alert, Dimensions, Modal, FlatList, TextInput, KeyboardAvoidingView, Keyboard } from 'react-native';
 import { db } from '../firebase';
-import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, onSnapshot, collection, addDoc } from 'firebase/firestore';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { auth } from '../firebase';
 import MapView, { Marker } from 'react-native-maps';
+import { MaterialIcons } from '@expo/vector-icons';
 
 const CancelAlert = ({ visible, onOk, userId }) => {
   const [isVisible, setIsVisible] = useState(visible);
@@ -25,7 +26,7 @@ const CancelAlert = ({ visible, onOk, userId }) => {
 
 export default function NicAssistScreen() {
   const route = useRoute();
-  const { userAId, userBId, sessionId } = route.params || {};
+  const { userAId, userBId, sessionId, nicAssistLat: initialNicAssistLat, nicAssistLng: initialNicAssistLng } = route.params || {};
   const navigation = useNavigation();
   const sessionIdRef = useRef(sessionId);
   const [userAData, setUserAData] = useState(null);
@@ -34,8 +35,14 @@ export default function NicAssistScreen() {
   const unsubscribeSession = useRef(null);
   const hasNavigatedRef = useRef(false);
   const [showAlert, setShowAlert] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const flatListRef = useRef(null);
 
   useEffect(() => {
+    console.log('NicAssistScreen params:', { userAId, userBId, sessionId, initialNicAssistLat, initialNicAssistLng });
     let unsubscribe;
 
     const init = async () => {
@@ -69,6 +76,23 @@ export default function NicAssistScreen() {
         }, (error) => {
           console.error('Session status listener error:', error);
         });
+
+        // Load messages
+        const chatId = [userAId, userBId].sort().join('_');
+        const messagesRef = collection(db, 'chats', chatId, 'messages');
+        onSnapshot(messagesRef, (snapshot) => {
+          const msgList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setMessages(msgList.sort((a, b) => a.timestamp - b.timestamp));
+          // Update lastMessage in chat document
+          if (msgList.length > 0) {
+            const latestMessage = msgList[msgList.length - 1];
+            updateDoc(doc(db, 'chats', chatId), {
+              lastMessage: { text: latestMessage.text, timestamp: latestMessage.timestamp }
+            });
+          }
+        }, (error) => {
+          console.error('Message listen error:', error);
+        });
       } catch (err) {
         console.error('Error initializing NicAssistScreen:', err);
       }
@@ -81,7 +105,34 @@ export default function NicAssistScreen() {
       hasNavigatedRef.current = false;
       setShowAlert(false);
     };
-  }, [userAId, userBId]);
+  }, [userAId, userBId, sessionId, initialNicAssistLat, initialNicAssistLng]);
+    
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
+        setKeyboardVisible(true);
+    });
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+        setKeyboardVisible(false);
+    });
+
+    return () => {
+        keyboardDidShowListener.remove();
+        keyboardDidHideListener.remove();
+    };
+  }, []);
+
+  const sendMessage = async () => {
+    if (newMessage.trim()) {
+      const chatId = [userAId, userBId].sort().join('_');
+      const messagesRef = collection(db, 'chats', chatId, 'messages');
+      await addDoc(messagesRef, {
+        text: newMessage,
+        senderId: auth.currentUser.uid,
+        timestamp: Date.now(),
+      });
+      setNewMessage('');
+    }
+  };
 
   const handleCancel = async () => {
     try {
@@ -111,13 +162,26 @@ export default function NicAssistScreen() {
     const userDocRef = doc(db, 'users', auth.currentUser.uid);
     await updateDoc(userDocRef, { showAlert: false, sessionStatus: false, sessionId: "" }, { merge: true });
     console.log('Reset showAlert, sessionStatus, and sessionId to false/"" for user:', auth.currentUser.uid);
+    setModalVisible(false)
     navigation.navigate('Tabs', { screen: 'Home' });
     hasNavigatedRef.current = true;
   };
 
+  const nicAssistLat = userBData?.NicAssists?.find(assist => assist.Active)?.NicAssistLat || initialNicAssistLat;
+  const nicAssistLng = userBData?.NicAssists?.find(assist => assist.Active)?.NicAssistLng || initialNicAssistLng;
+
+  useEffect(() => {
+    if (modalVisible && flatListRef.current) {
+      // Delay to ensure FlatList is rendered
+      setTimeout(() => {
+        flatListRef.current.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [modalVisible]);
+
   return (
     <View style={styles.container}>
-      {userAData && userBData && (
+      {userAData && userBData && nicAssistLat && nicAssistLng && (
         <View>
           <View style={styles.card}>
             <Text style={styles.title}>{isUserA ? 'NicQuest' : 'NicAssist'} Session</Text>
@@ -142,6 +206,11 @@ export default function NicAssistScreen() {
               </View>
             </View>
 
+            {/* Chat Icon */}
+            <TouchableOpacity style={styles.chatIcon} onPress={() => setModalVisible(true)}>
+              <MaterialIcons name="chat" size={30} color="#60a8b8" />
+            </TouchableOpacity>
+
             {/* PonyBoy's Info */}
             <View style={styles.detailsContainer}>
               <Text style={styles.infoHeader}>{userBData.username}’s Info</Text>
@@ -160,10 +229,10 @@ export default function NicAssistScreen() {
           <MapView
             style={styles.map}
             initialRegion={{
-              latitude: (userAData.location.latitude + userBData.location.latitude) / 2,
-              longitude: (userAData.location.longitude + userBData.location.longitude) / 2,
-              latitudeDelta: 0.001, // Reduced for closer zoom
-              longitudeDelta: 0.001, // Reduced for closer zoom
+              latitude: (userAData.location.latitude + userBData.location.latitude + nicAssistLat) / 3,
+              longitude: (userAData.location.longitude + userBData.location.longitude + nicAssistLng) / 3,
+              latitudeDelta: 0.003,
+              longitudeDelta: 0.003,
             }}
           >
             <Marker
@@ -175,8 +244,14 @@ export default function NicAssistScreen() {
             <Marker
               key="userB"
               coordinate={{ latitude: userBData.location.latitude, longitude: userBData.location.longitude }}
-              title={userBData.username + "'s Location"}
+              title={`${userBData.username}'s Location`}
               pinColor="#FF6347"
+            />
+            <Marker
+              key="nicAssist"
+              coordinate={{ latitude: nicAssistLat, longitude: nicAssistLng }}
+              title="NicAssist Location"
+              pinColor="green"
             />
           </MapView>
         </View>
@@ -185,6 +260,49 @@ export default function NicAssistScreen() {
         <Text style={styles.buttonText}>{isUserA ? 'Cancel NicQuest' : 'Cancel NicAssist'}</Text>
       </TouchableOpacity>
       <CancelAlert visible={showAlert} onOk={handleAlertOk} userId={auth.currentUser.uid} />
+
+      {/* Chat Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView behavior="padding" style={styles.modalContentContainer}>
+            <View style={styles.modalContent}>
+              <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
+                <Text style={styles.closeButtonText}>Close</Text>
+              </TouchableOpacity>
+              <FlatList
+                ref={flatListRef}
+                data={messages}
+                keyExtractor={item => item.id}
+                renderItem={({ item }) => (
+                  <View style={item.senderId === auth.currentUser.uid ? styles.sentMessage : styles.receivedMessage}>
+                    <Text style={styles.messageText}>{item.text}</Text>
+                    <Text style={styles.messageTime}>{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                  </View>
+                )}
+                contentContainerStyle={{ paddingBottom: 10 }}
+                onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+              />
+              <View style={[styles.inputContainer, { marginBottom: keyboardVisible ? 0 : 20 }]}>
+                <TextInput
+                  style={styles.messageInput}
+                  value={newMessage}
+                  onChangeText={setNewMessage}
+                  placeholder="Type a message..."
+                  placeholderTextColor="#888"
+                />
+                <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
+                  <Text style={styles.sendButtonText}>Send</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -211,7 +329,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
-    marginBottom: 20,
+    marginBottom: 10,
+    marginTop: 0, // keep it pinned under the title
   },
   usersContainer: {
     flexDirection: 'row',
@@ -297,6 +416,91 @@ const styles = StyleSheet.create({
     height: 300,
     marginBottom: 20,
   },
+  chatIcon: {
+    alignSelf: 'center',
+    marginVertical: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContentContainer: {
+    height: '75%',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  closeButton: {
+    alignSelf: 'flex-end',
+    paddingBottom: 10,
+  },
+  closeButtonText: {
+    fontSize: 16,
+    color: '#60a8b8',
+  },
+  sentMessage: {
+    backgroundColor: '#60a8b8',
+    padding: 10,
+    borderRadius: 8,
+    marginVertical: 4,
+    alignSelf: 'flex-end',
+    maxWidth: '75%',
+  },
+  receivedMessage: {
+    backgroundColor: '#e0e0e0',
+    padding: 10,
+    borderRadius: 8,
+    marginVertical: 4,
+    alignSelf: 'flex-start',
+    maxWidth: '75%',
+  },
+  messageText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  messageTime: {
+    fontSize: 12,
+    color: '#888',
+    alignSelf: 'flex-end',
+    marginTop: 2,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+    marginBottom: 20,
+  },
+  messageInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#333',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 20,
+  },
+  sendButton: {
+    backgroundColor: '#60a8b8',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    marginLeft: 10,
+  },
+  sendButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
 });
-
 

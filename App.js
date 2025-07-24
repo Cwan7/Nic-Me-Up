@@ -19,7 +19,7 @@ import HomeScreen from './screens/Tabs/HomeScreen';
 import SettingsScreen from './screens/Tabs/SettingsScreen';
 import ProfileScreen from './screens/Tabs/ProfileScreen';
 import NicQuestWaitingScreen from './screens/NicQuestWaitingScreen';
-import NicAssistScreen from './screens/NicAssistScreen'; // Renamed
+import NicAssistScreen from './screens/NicAssistScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -196,15 +196,36 @@ export default function App() {
           return;
         }
 
+        // Fetch nicAssistLat and nicAssistLng from UserA's active NicAssist or notification data
+        let nicAssistLat, nicAssistLng;
+        if (userAData?.NicAssists) {
+          const activeAssist = userAData.NicAssists.find(assist => assist.Active);
+          if (activeAssist) {
+            nicAssistLat = activeAssist.NicAssistLat;
+            nicAssistLng = activeAssist.NicAssistLng;
+          }
+        }
+        // Fallback to notification data if available (e.g., from HomeScreen.js initial quest)
+        if (!nicAssistLat && notification?.data?.nicAssistLat) {
+          nicAssistLat = notification.data.nicAssistLat;
+          nicAssistLng = notification.data.nicAssistLng;
+        }
+        if (!nicAssistLat || !nicAssistLng) {
+          console.error('❌ Could not retrieve nicAssistLat or nicAssistLng');
+          return;
+        }
+
         const userBDocRef = doc(db, 'users', auth.currentUser.uid);
         await setDoc(userBDocRef, { nicAssistResponse: notification.userId }, { merge: true });
         await updateDoc(userADocRef, { nicQuestAssistedBy: auth.currentUser.uid }, { merge: true });
         console.log(`✅ NicAssist selected for user ${notification?.userId}`);
-        hasNavigated.current = true; 
+        hasNavigated.current = true;
         navigationRef.current?.navigate('NicAssist', {
           userAId: notification.userId,
           userBId: auth.currentUser.uid,
           sessionId,
+          nicAssistLat,
+          nicAssistLng,
         });
       } catch (error) {
         console.error('Error updating Firestore for NicAssist:', error);
