@@ -6,6 +6,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { auth } from '../firebase';
 import MapView, { Marker } from 'react-native-maps';
 import { MaterialIcons } from '@expo/vector-icons';
+import Geolocation from '@react-native-community/geolocation';
 
 const CancelAlert = ({ visible, onOk, userId }) => {
   const [isVisible, setIsVisible] = useState(visible);
@@ -35,6 +36,7 @@ export default function NicAssistScreen() {
   const unsubscribeSession = useRef(null);
   const unsubscribeMessages = useRef(null);
   const unsubscribeChat = useRef(null);
+  const unsubscribeLocations = useRef(null);
   const hasNavigatedRef = useRef(false);
   const [showAlert, setShowAlert] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -44,6 +46,10 @@ export default function NicAssistScreen() {
   const flatListRef = useRef(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const currentUserId = auth.currentUser?.uid;
+  const [userALocation, setUserALocation] = useState({ latitude: initialNicAssistLat, longitude: initialNicAssistLng });
+  const [userBLocation, setUserBLocation] = useState({ latitude: initialNicAssistLat, longitude: initialNicAssistLng });
+  let locationWatchId = null;
+  const lastLoggedPosition = useRef(null); // Track last logged position
 
   useEffect(() => {
     let unsubscribe;
@@ -106,6 +112,23 @@ export default function NicAssistScreen() {
             console.warn('Chat document not found:', chatId);
           }
         }, (error) => console.error('Chat doc listen error:', error));
+
+        unsubscribeLocations.current = onSnapshot(doc(db, 'users', userAId), (docSnapshot) => {
+          if (docSnapshot.exists()) {
+            const data = docSnapshot.data();
+            if (data.location) {
+              setUserALocation(data.location);
+            }
+          }
+        }, (error) => console.error('Location A listener error:', error));
+        unsubscribeLocations.current = onSnapshot(doc(db, 'users', userBId), (docSnapshot) => {
+          if (docSnapshot.exists()) {
+            const data = docSnapshot.data();
+            if (data.location) {
+              setUserBLocation(data.location);
+            }
+          }
+        }, (error) => console.error('Location B listener error:', error));
       } catch (err) {
         console.error('Error initializing NicAssistScreen:', err);
       }
@@ -113,11 +136,34 @@ export default function NicAssistScreen() {
 
     init();
 
-    // Cleanup listeners on component unmount or auth change
+    const startLocationTracking = () => {
+  locationWatchId = Geolocation.watchPosition(
+    (position) => {
+      const { latitude, longitude } = position.coords;
+      const currentPosition = `${latitude},${longitude}`;
+      if (lastLoggedPosition.current !== currentPosition) {
+        const userDocRef = doc(db, 'users', currentUserId);
+        updateDoc(userDocRef, { location: { latitude, longitude }, lastUpdated: Date.now() }, { merge: true })
+          .then(() => {
+            // console.log(`📍 Location updated for ${currentUserId}: ${latitude}, ${longitude}`);
+            lastLoggedPosition.current = currentPosition;
+          })
+          .catch((error) => console.error('Location update error:', error));
+      }
+    },
+    (error) => console.error('Geolocation error:', error),
+    { enableHighAccuracy: true, distanceFilter: 2, interval: 2000 }
+  );
+};
+
+    startLocationTracking();
+
     return () => {
       if (unsubscribe) unsubscribe();
       if (unsubscribeMessages.current) unsubscribeMessages.current();
       if (unsubscribeChat.current) unsubscribeChat.current();
+      if (unsubscribeLocations.current) unsubscribeLocations.current();
+      if (locationWatchId) Geolocation.clearWatch(locationWatchId);
       hasNavigatedRef.current = false;
       setShowAlert(false);
     };
@@ -179,12 +225,12 @@ export default function NicAssistScreen() {
   useEffect(() => {
     if (modalVisible && flatListRef.current) {
       setTimeout(() => {
-        flatListRef.current.scrollToEnd({ animated: true });
+        flatListRef.current?.scrollToEnd({ animated: false });
       }, 100);
       const chatId = [userAId, userBId].sort().join('_');
       updateDoc(doc(db, 'chats', chatId), { [`unreadCount.${currentUserId}`]: 0 }, { merge: true });
     }
-  }, [modalVisible, userAId, userBId, currentUserId, messages.length]); // Added messages.length as dependency
+  }, [modalVisible, userAId, userBId, currentUserId, messages.length]);
 
   const closeModal = () => {
     setModalVisible(false);
@@ -234,14 +280,14 @@ export default function NicAssistScreen() {
           <MapView
             style={styles.map}
             initialRegion={{
-              latitude: (userAData.location.latitude + userBData.location.latitude + nicAssistLat) / 3,
-              longitude: (userAData.location.longitude + userBData.location.longitude + nicAssistLng) / 3,
+              latitude: (userALocation.latitude + userBLocation.latitude + nicAssistLat) / 3,
+              longitude: (userALocation.longitude + userBLocation.longitude + nicAssistLng) / 3,
               latitudeDelta: 0.003,
               longitudeDelta: 0.003,
             }}
           >
-            <Marker key="userA" coordinate={{ latitude: userAData.location.latitude, longitude: userAData.location.longitude }} title={`${userAData.username}'s Location`} pinColor="blue" />
-            <Marker key="userB" coordinate={{ latitude: userBData.location.latitude, longitude: userBData.location.longitude }} title={`${userBData.username}'s Location`} pinColor="#FF6347" />
+            <Marker key="userA" coordinate={userALocation} title={`${userAData.username}'s Location`} pinColor="blue" />
+            <Marker key="userB" coordinate={userBLocation} title={`${userBData.username}'s Location`} pinColor="#FF6347" />
             <Marker key="nicAssist" coordinate={{ latitude: nicAssistLat, longitude: nicAssistLng }} title="NicAssist Location" pinColor="green" />
           </MapView>
         </View>
@@ -261,23 +307,23 @@ export default function NicAssistScreen() {
                 data={messages}
                 keyExtractor={item => item.id}
                 renderItem={({ item }) => (
-                    <View style={item.senderId === currentUserId ? styles.sentMessage : styles.receivedMessage}>
+                  <View style={item.senderId === currentUserId ? styles.sentMessage : styles.receivedMessage}>
                     <Text style={styles.messageText}>{item.text}</Text>
                     <Text style={styles.messageTime}>
-                        {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>
-                    </View>
+                  </View>
                 )}
                 contentContainerStyle={{ paddingBottom: 20 }}
                 onContentSizeChange={() => {
-                    flatListRef.current?.scrollToEnd({ animated: false });
+                  flatListRef.current?.scrollToEnd({ animated: false });
                 }}
                 onLayout={() => {
-                    setTimeout(() => {
+                  setTimeout(() => {
                     flatListRef.current?.scrollToEnd({ animated: false });
-                    }, 100); // delay ensures layout is complete
+                  }, 100);
                 }}
-                />
+              />
               <View style={[styles.inputContainer, { marginBottom: keyboardVisible ? 0 : 20 }]}>
                 <TextInput style={styles.messageInput} value={newMessage} onChangeText={setNewMessage} placeholder="Type a message..." placeholderTextColor="#888" />
                 <TouchableOpacity style={styles.sendButton} onPress={sendMessage}><Text style={styles.sendButtonText}>Send</Text></TouchableOpacity>
@@ -315,7 +361,7 @@ const styles = StyleSheet.create({
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 0, 0, 0.5)' },
   modalContentContainer: { height: '75%', justifyContent: 'flex-end' },
   modalContent: { flex: 1, backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 20 },
-  closeButton: { alignSelf: 'center', paddingBottom: 10, },
+  closeButton: { alignSelf: 'center', paddingBottom: 10 },
   closeButtonText: { fontSize: 18, color: '#60a8b8', fontWeight: 'bold' },
   sentMessage: { backgroundColor: '#6AB8CC', padding: 10, borderRadius: 8, marginVertical: 4, alignSelf: 'flex-end', maxWidth: '75%' },
   receivedMessage: { backgroundColor: '#e0e0e0', padding: 10, borderRadius: 8, marginVertical: 4, alignSelf: 'flex-start', maxWidth: '75%' },
@@ -325,6 +371,5 @@ const styles = StyleSheet.create({
   messageInput: { flex: 1, fontSize: 16, color: '#333', paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#f5f5f5', borderRadius: 20 },
   sendButton: { backgroundColor: '#60a8b8', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, marginLeft: 10 },
   sendButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  divider: {height: StyleSheet.hairlineWidth,backgroundColor: '#ccc',width: '100%',alignSelf: 'stretch',
-},
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#ccc', width: '100%', alignSelf: 'stretch' },
 });

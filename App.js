@@ -68,7 +68,8 @@ export default function App() {
   const [notification, setNotification] = useState(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const isInitialMount = useRef(true);
-  const hasNavigated = useRef(false); // Flag to prevent multiple navigations
+  const hasNavigated = useRef(false);
+  const navigationRef = useRef();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -97,11 +98,23 @@ export default function App() {
         // Handle location permission
         if (!locationPermission) {
           const { status } = await Location.requestForegroundPermissionsAsync();
+          if (Platform.OS === 'ios') {
+            const backgroundStatus = await Location.requestBackgroundPermissionsAsync();
+            if (backgroundStatus.status !== 'granted') {
+              console.log('Background location permission not granted');
+            }
+          }
           setLocationPermission(status);
           if (status === 'granted') {
-            const location = !Device.isDevice
-              ? { coords: { latitude: 39.7405, longitude: -104.9706, timestamp: new Date().toISOString() } }
-              : await Location.getCurrentPositionAsync({});
+            let location;
+            if (!Device.isDevice) {
+              location = { coords: { latitude: 39.7405, longitude: -104.9706, timestamp: new Date().toISOString() } };
+              console.log('Forcing hardcoded simulator location:', location.coords);
+              await setDoc(userDocRef, { location: location.coords }, { merge: true }); // Force update to Firestore
+            } else {
+              location = await Location.getCurrentPositionAsync({});
+              console.log('Using live device location:', location.coords);
+            }
             await setDoc(userDocRef, {
               location: {
                 latitude: location.coords.latitude,
@@ -124,7 +137,6 @@ export default function App() {
   }, [locationPermission]);
 
   useEffect(() => {
-    // Handle initial notification on app launch (cold start) only
     if (isInitialMount.current) {
       const checkInitialNotification = async () => {
         const response = await Notifications.getLastNotificationResponseAsync();
@@ -137,14 +149,13 @@ export default function App() {
             setIsModalVisible(true);
           }
         }
-        isInitialMount.current = false; // Set to false after first run
+        isInitialMount.current = false;
       };
       checkInitialNotification();
     }
   }, []);
 
   useEffect(() => {
-    // Set up notification handlers
     const notificationHandler = Notifications.setNotificationHandler({
       handleNotification: async (notification) => {
         const { data } = notification.request.content;
@@ -179,65 +190,62 @@ export default function App() {
   }, []);
 
   const handleModalAction = async (action) => {
-  console.log('handleModalAction called with action:', action);
-  if (action === 'NicAssist' && !hasNavigated.current) {
-    const userADocRef = doc(db, 'users', notification.userId);
-    const userADoc = await getDoc(userADocRef);
-    const userAData = userADoc.data();
-    console.log('UserA data:', userAData);
+    console.log('handleModalAction called with action:', action);
+    if (action === 'NicAssist' && !hasNavigated.current) {
+      const userADocRef = doc(db, 'users', notification.userId);
+      const userADoc = await getDoc(userADocRef);
+      const userAData = userADoc.data();
+      console.log('UserA data:', userAData);
 
-    if (userAData?.nicQuestAssistedBy) {
-      Alert.alert('NicQuest Already Assisted!', 'This NicQuest has already been assisted by another user.');
-    } else {
-      try {
-        const sessionId = userAData?.sessionId;
-        if (!sessionId) {
-          console.error('❌ Could not retrieve sessionId from userA');
-          return;
-        }
-
-        // Fetch nicAssistLat and nicAssistLng from UserA's active NicAssist or notification data
-        let nicAssistLat, nicAssistLng;
-        if (userAData?.NicAssists) {
-          const activeAssist = userAData.NicAssists.find(assist => assist.Active);
-          if (activeAssist) {
-            nicAssistLat = activeAssist.NicAssistLat;
-            nicAssistLng = activeAssist.NicAssistLng;
+      if (userAData?.nicQuestAssistedBy) {
+        Alert.alert('NicQuest Already Assisted!', 'This NicQuest has already been assisted by another user.');
+      } else {
+        try {
+          const sessionId = userAData?.sessionId;
+          if (!sessionId) {
+            console.error('❌ Could not retrieve sessionId from userA');
+            return;
           }
-        }
-        // Fallback to notification data if available (e.g., from HomeScreen.js initial quest)
-        if (!nicAssistLat && notification?.data?.nicAssistLat) {
-          nicAssistLat = notification.data.nicAssistLat;
-          nicAssistLng = notification.data.nicAssistLng;
-        }
-        if (!nicAssistLat || !nicAssistLng) {
-          console.error('❌ Could not retrieve nicAssistLat or nicAssistLng');
-          return;
-        }
 
-        const userBDocRef = doc(db, 'users', auth.currentUser.uid);
-        await setDoc(userBDocRef, { nicAssistResponse: notification.userId }, { merge: true });
-        await updateDoc(userADocRef, { nicQuestAssistedBy: auth.currentUser.uid }, { merge: true });
-        console.log(`✅ NicAssist selected for user ${notification?.userId}`);
-        hasNavigated.current = true;
-        navigationRef.current?.navigate('NicAssist', {
-          userAId: notification.userId,
-          userBId: auth.currentUser.uid,
-          sessionId,
-          nicAssistLat,
-          nicAssistLng,
-        });
-      } catch (error) {
-        console.error('Error updating Firestore for NicAssist:', error);
+          let nicAssistLat, nicAssistLng;
+          if (userAData?.NicAssists) {
+            const activeAssist = userAData.NicAssists.find(assist => assist.Active);
+            if (activeAssist) {
+              nicAssistLat = activeAssist.NicAssistLat;
+              nicAssistLng = activeAssist.NicAssistLng;
+            }
+          }
+          if (!nicAssistLat && notification?.data?.nicAssistLat) {
+            nicAssistLat = notification.data.nicAssistLat;
+            nicAssistLng = notification.data.nicAssistLng;
+          }
+          if (!nicAssistLat || !nicAssistLng) {
+            console.error('❌ Could not retrieve nicAssistLat or nicAssistLng');
+            return;
+          }
+
+          const userBDocRef = doc(db, 'users', auth.currentUser.uid);
+          await setDoc(userBDocRef, { nicAssistResponse: notification.userId }, { merge: true });
+          await updateDoc(userADocRef, { nicQuestAssistedBy: auth.currentUser.uid }, { merge: true });
+          console.log(`✅ NicAssist selected for user ${notification?.userId}`);
+          hasNavigated.current = true;
+          navigationRef.current?.navigate('NicAssist', {
+            userAId: notification.userId,
+            userBId: auth.currentUser.uid,
+            sessionId,
+            nicAssistLat,
+            nicAssistLng,
+          });
+        } catch (error) {
+          console.error('Error updating Firestore for NicAssist:', error);
+        }
       }
+    } else if (action === 'Decline') {
+      console.log(`❌ Decline NicQuest for user ${notification?.userId}`);
     }
-  } else if (action === 'Decline') {
-    console.log(`❌ Decline NicQuest for user ${notification?.userId}`);
-  }
-  setIsModalVisible(false);
-  if (action === 'NicAssist') hasNavigated.current = false; // Reset flag after action completes
-};
-  const navigationRef = useRef();
+    setIsModalVisible(false);
+    if (action === 'NicAssist') hasNavigated.current = false;
+  };
 
   return (
     <NavigationContainer ref={navigationRef}>
