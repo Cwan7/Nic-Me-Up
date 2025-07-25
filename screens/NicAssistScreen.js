@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Alert, Dimensions, Modal, FlatList, TextInput, KeyboardAvoidingView, Keyboard } from 'react-native';
 import { db } from '../firebase';
-import { doc, getDoc, updateDoc, onSnapshot, collection, addDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, onSnapshot, collection, addDoc, setDoc } from 'firebase/firestore';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { auth } from '../firebase';
 import MapView, { Marker } from 'react-native-maps';
@@ -33,6 +33,8 @@ export default function NicAssistScreen() {
   const [userBData, setUserBData] = useState(null);
   const isUserA = auth.currentUser?.uid === userAId;
   const unsubscribeSession = useRef(null);
+  const unsubscribeMessages = useRef(null);
+  const unsubscribeChat = useRef(null);
   const hasNavigatedRef = useRef(false);
   const [showAlert, setShowAlert] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -40,59 +42,70 @@ export default function NicAssistScreen() {
   const [newMessage, setNewMessage] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const flatListRef = useRef(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const currentUserId = auth.currentUser?.uid;
 
   useEffect(() => {
-    console.log('NicAssistScreen params:', { userAId, userBId, sessionId, initialNicAssistLat, initialNicAssistLng });
     let unsubscribe;
+    if (!sessionIdRef.current || !userAId || !userBId || !currentUserId) {
+      console.error('Invalid session or user IDs:', { sessionId: sessionIdRef.current, userAId, userBId, currentUserId });
+      return;
+    }
+    console.log('NicAssistScreen initialized for', currentUserId, 'isUserA:', isUserA, 'sessionId:', sessionId);
 
     const init = async () => {
-      if (!sessionIdRef.current) {
-        console.error('SessionId is undefined, cannot initialize NicAssistScreen');
-        return;
-      }
-
       try {
         const userADoc = await getDoc(doc(db, 'users', userAId));
         const userBDoc = await getDoc(doc(db, 'users', userBId));
+        if (!userADoc.exists() || !userBDoc.exists()) {
+          console.error('User data not found:', { userAId, userBId });
+          return;
+        }
         setUserAData(userADoc.data());
         setUserBData(userBDoc.data());
 
         const userADocRef = doc(db, 'users', userAId);
         const userBDocRef = doc(db, 'users', userBId);
-        await updateDoc(userADocRef, { sessionStatus: true, sessionId: sessionIdRef.current }, { merge: true });
-        await updateDoc(userBDocRef, { sessionStatus: true, sessionId: sessionIdRef.current }, { merge: true });
+        await updateDoc(userADocRef, { sessionId: sessionIdRef.current }, { merge: true });
+        await updateDoc(userBDocRef, { sessionId: sessionIdRef.current }, { merge: true });
         console.log('Session initialized with sessionId:', sessionIdRef.current);
 
-        const userDocRef = doc(db, 'users', auth.currentUser.uid);
-        unsubscribe = onSnapshot(userDocRef, (docSnapshot) => {
+        unsubscribe = onSnapshot(doc(db, 'users', currentUserId), (docSnapshot) => {
           if (docSnapshot.exists() && !hasNavigatedRef.current) {
             const data = docSnapshot.data();
-            console.log('Listener fired for user:', auth.currentUser.uid, 'data.sessionId:', data.sessionId, 'current sessionId:', sessionIdRef.current);
             if (data.showAlert && data.sessionId === sessionIdRef.current) {
-              console.log('Alert triggered for user:', auth.currentUser.uid);
               setShowAlert(true);
             }
           }
-        }, (error) => {
-          console.error('Session status listener error:', error);
-        });
+        }, (error) => console.error('Session status listener error:', error));
 
-        // Load messages
         const chatId = [userAId, userBId].sort().join('_');
-        const messagesRef = collection(db, 'chats', chatId, 'messages');
-        onSnapshot(messagesRef, (snapshot) => {
+        const chatDocRef = doc(db, 'chats', chatId);
+        if (!(await getDoc(chatDocRef)).exists()) {
+          await setDoc(chatDocRef, { participants: [userAId, userBId], unreadCount: { [userBId]: 0 }, lastMessage: null }, { merge: true });
+          console.log('Chat document initialized for:', chatId);
+        }
+
+        unsubscribeMessages.current = onSnapshot(collection(db, 'chats', chatId, 'messages'), (snapshot) => {
           const msgList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setMessages(msgList.sort((a, b) => a.timestamp - b.timestamp));
-          // Update lastMessage in chat document
-          if (msgList.length > 0) {
-            const latestMessage = msgList[msgList.length - 1];
-            updateDoc(doc(db, 'chats', chatId), {
-              lastMessage: { text: latestMessage.text, timestamp: latestMessage.timestamp }
-            });
+          const sortedMessages = msgList.sort((a, b) => a.timestamp - b.timestamp);
+          setMessages(sortedMessages);
+          if (sortedMessages.length > 0 && sortedMessages[sortedMessages.length - 1].senderId !== currentUserId && !modalVisible) {
+            const newCount = unreadCount + 1;
+            updateDoc(chatDocRef, { 
+              [`unreadCount.${currentUserId}`]: newCount,
+              lastMessage: sortedMessages[sortedMessages.length - 1].text 
+            }, { merge: true });
           }
-        }, (error) => {
-          console.error('Message listen error:', error);
-        });
+        }, (error) => console.error('Message listen error:', error));
+
+        unsubscribeChat.current = onSnapshot(chatDocRef, (docSnapshot) => {
+          if (docSnapshot.exists()) {
+            setUnreadCount(docSnapshot.data().unreadCount?.[currentUserId] || 0);
+          } else {
+            console.warn('Chat document not found:', chatId);
+          }
+        }, (error) => console.error('Chat doc listen error:', error));
       } catch (err) {
         console.error('Error initializing NicAssistScreen:', err);
       }
@@ -100,69 +113,62 @@ export default function NicAssistScreen() {
 
     init();
 
+    // Cleanup listeners on component unmount or auth change
     return () => {
       if (unsubscribe) unsubscribe();
+      if (unsubscribeMessages.current) unsubscribeMessages.current();
+      if (unsubscribeChat.current) unsubscribeChat.current();
       hasNavigatedRef.current = false;
       setShowAlert(false);
     };
   }, [userAId, userBId, sessionId, initialNicAssistLat, initialNicAssistLng]);
-    
-  useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
-        setKeyboardVisible(true);
-    });
-    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
-        setKeyboardVisible(false);
-    });
 
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
     return () => {
-        keyboardDidShowListener.remove();
-        keyboardDidHideListener.remove();
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
     };
   }, []);
 
   const sendMessage = async () => {
     if (newMessage.trim()) {
       const chatId = [userAId, userBId].sort().join('_');
-      const messagesRef = collection(db, 'chats', chatId, 'messages');
-      await addDoc(messagesRef, {
+      const newMsgRef = await addDoc(collection(db, 'chats', chatId, 'messages'), {
         text: newMessage,
-        senderId: auth.currentUser.uid,
+        senderId: currentUserId,
         timestamp: Date.now(),
       });
+      const chatDocRef = doc(db, 'chats', chatId);
+      await updateDoc(chatDocRef, { 
+        lastMessage: newMessage 
+      }, { merge: true });
       setNewMessage('');
     }
   };
 
   const handleCancel = async () => {
     try {
-      console.log('Cancelling for user:', auth.currentUser?.uid, 'isUserA:', isUserA);
       const userADocRef = doc(db, 'users', userAId);
       const userBDocRef = doc(db, 'users', userBId);
       const otherUserId = isUserA ? userBId : userAId;
       if (isUserA) {
-        console.log('Updating userAId:', userAId, 'and userBId:', userBId);
-        await updateDoc(userADocRef, { nicQuestAssistedBy: null, sessionStatus: false, showAlert: false, sessionId: "" }, { merge: true });
+        await updateDoc(userADocRef, { nicQuestAssistedBy: null, showAlert: false, sessionId: "" }, { merge: true });
         await updateDoc(userBDocRef, { nicAssistResponse: null, showAlert: true, sessionId: sessionIdRef.current }, { merge: true });
-        navigation.navigate('Tabs', { screen: 'Home' });
       } else {
-        console.log('Updating userBId:', userBId, 'and userAId:', userAId);
-        const userBDoc = await getDoc(doc(db, 'users', userBId));
-        console.log('UserB nicAssistResponse:', userBDoc.data()?.nicAssistResponse);
-        await updateDoc(userBDocRef, { nicAssistResponse: null, sessionStatus: false, showAlert: false, sessionId: "" }, { merge: true });
+        await updateDoc(userBDocRef, { nicAssistResponse: null, showAlert: false, sessionId: "" }, { merge: true });
         await updateDoc(userADocRef, { nicQuestAssistedBy: null, showAlert: true, sessionId: sessionIdRef.current }, { merge: true });
-        navigation.navigate('Tabs', { screen: 'Home' });
       }
+      navigation.navigate('Tabs', { screen: 'Home' });
     } catch (error) {
       console.error('Error cancelling:', error);
     }
   };
 
   const handleAlertOk = async () => {
-    const userDocRef = doc(db, 'users', auth.currentUser.uid);
-    await updateDoc(userDocRef, { showAlert: false, sessionStatus: false, sessionId: "" }, { merge: true });
-    console.log('Reset showAlert, sessionStatus, and sessionId to false/"" for user:', auth.currentUser.uid);
-    setModalVisible(false)
+    await updateDoc(doc(db, 'users', currentUserId), { showAlert: false, sessionId: "" }, { merge: true });
+    setModalVisible(false);
     navigation.navigate('Tabs', { screen: 'Home' });
     hasNavigatedRef.current = true;
   };
@@ -172,12 +178,19 @@ export default function NicAssistScreen() {
 
   useEffect(() => {
     if (modalVisible && flatListRef.current) {
-      // Delay to ensure FlatList is rendered
       setTimeout(() => {
         flatListRef.current.scrollToEnd({ animated: true });
       }, 100);
+      const chatId = [userAId, userBId].sort().join('_');
+      updateDoc(doc(db, 'chats', chatId), { [`unreadCount.${currentUserId}`]: 0 }, { merge: true });
     }
-  }, [modalVisible]);
+  }, [modalVisible, userAId, userBId, currentUserId, messages.length]); // Added messages.length as dependency
+
+  const closeModal = () => {
+    setModalVisible(false);
+    const chatId = [userAId, userBId].sort().join('_');
+    updateDoc(doc(db, 'chats', chatId), { [`unreadCount.${currentUserId}`]: 0 }, { merge: true });
+  };
 
   return (
     <View style={styles.container}>
@@ -186,32 +199,24 @@ export default function NicAssistScreen() {
           <View style={styles.card}>
             <Text style={styles.title}>{isUserA ? 'NicQuest' : 'NicAssist'} Session</Text>
             <View style={styles.usersContainer}>
-              {/* User A */}
               <View style={styles.userCard}>
                 <Image source={{ uri: userAData.photoURL }} style={styles.userPhoto} />
                 <Text style={styles.roleLabel}>{isUserA ? 'You' : 'NicQuest'}</Text>
                 <Text style={styles.username}>{userAData.username}</Text>
               </View>
-
-              {/* Divider */}
-              <View style={styles.vsContainer}>
-                <Text style={styles.vsText}>→</Text>
-              </View>
-
-              {/* User B */}
+              <View style={styles.vsContainer}><Text style={styles.vsText}>→</Text></View>
               <View style={styles.userCard}>
                 <Image source={{ uri: userBData.photoURL }} style={styles.userPhoto} />
                 <Text style={styles.roleLabel}>{isUserA ? 'NicAssist' : 'You'}</Text>
                 <Text style={styles.username}>{userBData.username}</Text>
               </View>
             </View>
-
-            {/* Chat Icon */}
             <TouchableOpacity style={styles.chatIcon} onPress={() => setModalVisible(true)}>
-              <MaterialIcons name="chat" size={30} color="#60a8b8" />
+              <View style={styles.iconContainer}>
+                <MaterialIcons name="chat" size={40} color="#60a8b8" />
+                {unreadCount > 0 && <MaterialIcons name="priority-high" size={20} color="white" style={styles.badge} />}
+              </View>
             </TouchableOpacity>
-
-            {/* PonyBoy's Info */}
             <View style={styles.detailsContainer}>
               <Text style={styles.infoHeader}>{userBData.username}’s Info</Text>
               <View style={styles.data}>
@@ -235,69 +240,47 @@ export default function NicAssistScreen() {
               longitudeDelta: 0.003,
             }}
           >
-            <Marker
-              key="userA"
-              coordinate={{ latitude: userAData.location.latitude, longitude: userAData.location.longitude }}
-              title="Your Location"
-              pinColor="blue"
-            />
-            <Marker
-              key="userB"
-              coordinate={{ latitude: userBData.location.latitude, longitude: userBData.location.longitude }}
-              title={`${userBData.username}'s Location`}
-              pinColor="#FF6347"
-            />
-            <Marker
-              key="nicAssist"
-              coordinate={{ latitude: nicAssistLat, longitude: nicAssistLng }}
-              title="NicAssist Location"
-              pinColor="green"
-            />
+            <Marker key="userA" coordinate={{ latitude: userAData.location.latitude, longitude: userAData.location.longitude }} title={`${userAData.username}'s Location`} pinColor="blue" />
+            <Marker key="userB" coordinate={{ latitude: userBData.location.latitude, longitude: userBData.location.longitude }} title={`${userBData.username}'s Location`} pinColor="#FF6347" />
+            <Marker key="nicAssist" coordinate={{ latitude: nicAssistLat, longitude: nicAssistLng }} title="NicAssist Location" pinColor="green" />
           </MapView>
         </View>
       )}
       <TouchableOpacity style={styles.bottomButton} onPress={handleCancel}>
         <Text style={styles.buttonText}>{isUserA ? 'Cancel NicQuest' : 'Cancel NicAssist'}</Text>
       </TouchableOpacity>
-      <CancelAlert visible={showAlert} onOk={handleAlertOk} userId={auth.currentUser.uid} />
-
-      {/* Chat Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
+      <CancelAlert visible={showAlert} onOk={handleAlertOk} userId={currentUserId} />
+      <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView behavior="padding" style={styles.modalContentContainer}>
             <View style={styles.modalContent}>
-              <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
-                <Text style={styles.closeButtonText}>Close</Text>
-              </TouchableOpacity>
+              <TouchableOpacity style={styles.closeButton} onPress={closeModal}><Text style={styles.closeButtonText}>Close</Text></TouchableOpacity>
+              <View style={styles.divider} />
               <FlatList
                 ref={flatListRef}
                 data={messages}
                 keyExtractor={item => item.id}
                 renderItem={({ item }) => (
-                  <View style={item.senderId === auth.currentUser.uid ? styles.sentMessage : styles.receivedMessage}>
+                    <View style={item.senderId === currentUserId ? styles.sentMessage : styles.receivedMessage}>
                     <Text style={styles.messageText}>{item.text}</Text>
-                    <Text style={styles.messageTime}>{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                  </View>
+                    <Text style={styles.messageTime}>
+                        {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                    </View>
                 )}
-                contentContainerStyle={{ paddingBottom: 10 }}
-                onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-              />
-              <View style={[styles.inputContainer, { marginBottom: keyboardVisible ? 0 : 20 }]}>
-                <TextInput
-                  style={styles.messageInput}
-                  value={newMessage}
-                  onChangeText={setNewMessage}
-                  placeholder="Type a message..."
-                  placeholderTextColor="#888"
+                contentContainerStyle={{ paddingBottom: 20 }}
+                onContentSizeChange={() => {
+                    flatListRef.current?.scrollToEnd({ animated: false });
+                }}
+                onLayout={() => {
+                    setTimeout(() => {
+                    flatListRef.current?.scrollToEnd({ animated: false });
+                    }, 100); // delay ensures layout is complete
+                }}
                 />
-                <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
-                  <Text style={styles.sendButtonText}>Send</Text>
-                </TouchableOpacity>
+              <View style={[styles.inputContainer, { marginBottom: keyboardVisible ? 0 : 20 }]}>
+                <TextInput style={styles.messageInput} value={newMessage} onChangeText={setNewMessage} placeholder="Type a message..." placeholderTextColor="#888" />
+                <TouchableOpacity style={styles.sendButton} onPress={sendMessage}><Text style={styles.sendButtonText}>Send</Text></TouchableOpacity>
               </View>
             </View>
           </KeyboardAvoidingView>
@@ -308,199 +291,40 @@ export default function NicAssistScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#dcdcdc',
-    paddingHorizontal: 20,
-    paddingTop: 10,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 10,
-    color: '#60a8b8',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-    marginBottom: 10,
-    marginTop: 0, // keep it pinned under the title
-  },
-  usersContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  userCard: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '40%',
-  },
-  userPhoto: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    marginBottom: 6,
-    backgroundColor: '#e0e0e0',
-  },
-  username: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#222',
-  },
-  roleLabel: {
-    fontSize: 12,
-    color: '#888',
-    marginBottom: 2,
-  },
-  vsContainer: {
-    width: '20%',
-    alignItems: 'center',
-  },
-  vsText: {
-    fontSize: 45,
-    color: '#60a8b8',
-  },
-  detailsContainer: {
-    marginTop: 24,
-    alignItems: 'center',
-    width: '100%',
-  },
-  infoHeader: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#2b2b2b',
-    marginBottom: 10,
-    textTransform: 'capitalize',
-  },
-  data: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    gap: 10,
-  },
-  detail: {
-    fontSize: 14,
-    color: '#555',
-    marginVertical: 6,
-  },
-  detailValue: {
-    fontWeight: '600',
-    color: '#333',
-  },
-  bottomButton: {
-    position: 'absolute',
-    bottom: 30,
-    alignSelf: 'center',
-    width: '80%',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: '#60a8b8',
-    borderBottomWidth: 2,
-    borderBottomColor: '#4d8a9b',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  map: {
-    width: Dimensions.get('window').width - 40,
-    height: 300,
-    marginBottom: 20,
-  },
-  chatIcon: {
-    alignSelf: 'center',
-    marginVertical: 1,
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContentContainer: {
-    height: '75%',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-  },
-  closeButton: {
-    alignSelf: 'flex-end',
-    paddingBottom: 10,
-  },
-  closeButtonText: {
-    fontSize: 16,
-    color: '#60a8b8',
-  },
-  sentMessage: {
-    backgroundColor: '#60a8b8',
-    padding: 10,
-    borderRadius: 8,
-    marginVertical: 4,
-    alignSelf: 'flex-end',
-    maxWidth: '75%',
-  },
-  receivedMessage: {
-    backgroundColor: '#e0e0e0',
-    padding: 10,
-    borderRadius: 8,
-    marginVertical: 4,
-    alignSelf: 'flex-start',
-    maxWidth: '75%',
-  },
-  messageText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  messageTime: {
-    fontSize: 12,
-    color: '#888',
-    alignSelf: 'flex-end',
-    marginTop: 2,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
-    marginBottom: 20,
-  },
-  messageInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#333',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 20,
-  },
-  sendButton: {
-    backgroundColor: '#60a8b8',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    marginLeft: 10,
-  },
-  sendButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  container: { flex: 1, backgroundColor: '#dcdcdc', paddingHorizontal: 20, paddingTop: 10 },
+  title: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 10, color: '#60a8b8' },
+  card: { backgroundColor: '#fff', borderRadius: 16, padding: 20, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, elevation: 3, marginBottom: 10 },
+  usersContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  userCard: { alignItems: 'center', justifyContent: 'center', width: '40%' },
+  userPhoto: { width: 80, height: 80, borderRadius: 40, marginBottom: 6, backgroundColor: '#e0e0e0' },
+  username: { fontSize: 14, fontWeight: 'bold', color: '#222' },
+  roleLabel: { fontSize: 12, color: '#888', marginBottom: 2 },
+  vsContainer: { width: '20%', alignItems: 'center' },
+  vsText: { fontSize: 45, color: '#60a8b8' },
+  detailsContainer: { marginTop: 5, alignItems: 'center', width: '100%' },
+  infoHeader: { fontSize: 16, fontWeight: '700', color: '#2b2b2b', marginBottom: 10, textTransform: 'capitalize' },
+  data: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', gap: 10 },
+  detail: { fontSize: 14, color: '#555', marginVertical: 6 },
+  detailValue: { fontWeight: '600', color: '#333' },
+  bottomButton: { position: 'absolute', bottom: 30, alignSelf: 'center', width: '80%', borderRadius: 8, paddingVertical: 12, alignItems: 'center', backgroundColor: '#60a8b8', borderBottomWidth: 2, borderBottomColor: '#4d8a9b' },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  map: { width: Dimensions.get('window').width - 40, height: 300, marginBottom: 20 },
+  chatIcon: { alignSelf: 'center', marginVertical: 1 },
+  iconContainer: { position: 'relative' },
+  badge: { position: 'absolute', top: -5, right: -10, backgroundColor: '#cc0808', borderRadius: '50%' },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 0, 0, 0.5)' },
+  modalContentContainer: { height: '75%', justifyContent: 'flex-end' },
+  modalContent: { flex: 1, backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 20 },
+  closeButton: { alignSelf: 'center', paddingBottom: 10, },
+  closeButtonText: { fontSize: 18, color: '#60a8b8', fontWeight: 'bold' },
+  sentMessage: { backgroundColor: '#6AB8CC', padding: 10, borderRadius: 8, marginVertical: 4, alignSelf: 'flex-end', maxWidth: '75%' },
+  receivedMessage: { backgroundColor: '#e0e0e0', padding: 10, borderRadius: 8, marginVertical: 4, alignSelf: 'flex-start', maxWidth: '75%' },
+  messageText: { fontSize: 16, color: '#333' },
+  messageTime: { fontSize: 12, color: '#888', alignSelf: 'flex-end', marginTop: 2 },
+  inputContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#ddd', marginBottom: 20 },
+  messageInput: { flex: 1, fontSize: 16, color: '#333', paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#f5f5f5', borderRadius: 20 },
+  sendButton: { backgroundColor: '#60a8b8', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, marginLeft: 10 },
+  sendButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  divider: {height: StyleSheet.hairlineWidth,backgroundColor: '#ccc',width: '100%',alignSelf: 'stretch',
+},
 });
-

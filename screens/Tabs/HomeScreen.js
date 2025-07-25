@@ -127,7 +127,7 @@ export default function HomeScreen({ route }) {
   try {
     const sessionId = Date.now().toString(); 
     const userADocRef = doc(db, 'users', currentUser.uid);
-    await updateDoc(userADocRef, { sessionId, sessionStatus: true }, { merge: true });
+    await updateDoc(userADocRef, { sessionId }, { merge: true }); // removed sessionStatus: true 
     console.log('Session initialized with sessionId:', sessionId);
 
     const usersSnapshot = await getDocs(collection(db, 'users'));

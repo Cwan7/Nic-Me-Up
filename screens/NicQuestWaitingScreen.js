@@ -21,7 +21,7 @@ export default function NicQuestWaitingScreen({ route }) {
         console.log('Assister found, navigating to NicAssistScreen');
         const userBId = snapshot.docs[0].id;
         const userADocRef = doc(db, 'users', userId);
-        await updateDoc(userADocRef, { sessionStatus: true, sessionId }, { merge: true });
+        await updateDoc(userADocRef, { sessionId }, { merge: true }); //removed sessionStatus: true,
         navigation.navigate('NicAssist', { 
           userAId: userId, 
           userBId, 
@@ -49,7 +49,7 @@ export default function NicQuestWaitingScreen({ route }) {
   const handleCancel = async () => {
     try {
       const userADocRef = doc(db, 'users', userId);
-      await updateDoc(userADocRef, { nicQuestAssistedBy: null, sessionId: "", sessionStatus: false }, { merge: true });
+      await updateDoc(userADocRef, { nicQuestAssistedBy: null, sessionId: ""}, { merge: true }); // removed sessionStatus: false 
       navigation.navigate('Tabs', { screen: 'Home' });
       hasNavigatedRef.current = false;
     } catch (error) {
