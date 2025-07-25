@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Alert, Dimensions, Modal, FlatList, TextInput, KeyboardAvoidingView, Keyboard } from 'react-native';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { doc, getDoc, updateDoc, onSnapshot, collection, addDoc, setDoc } from 'firebase/firestore';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import { auth } from '../firebase';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import MapView, { Marker } from 'react-native-maps';
 import { MaterialIcons } from '@expo/vector-icons';
 import Geolocation from '@react-native-community/geolocation';
@@ -36,7 +35,8 @@ export default function NicAssistScreen() {
   const unsubscribeSession = useRef(null);
   const unsubscribeMessages = useRef(null);
   const unsubscribeChat = useRef(null);
-  const unsubscribeLocations = useRef(null);
+  const unsubscribeLocationA = useRef(null); // Separate ref for userA
+  const unsubscribeLocationB = useRef(null); // Separate ref for userB
   const hasNavigatedRef = useRef(false);
   const [showAlert, setShowAlert] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -49,15 +49,13 @@ export default function NicAssistScreen() {
   const [userALocation, setUserALocation] = useState({ latitude: initialNicAssistLat, longitude: initialNicAssistLng });
   const [userBLocation, setUserBLocation] = useState({ latitude: initialNicAssistLat, longitude: initialNicAssistLng });
   let locationWatchId = null;
-  const lastLoggedPosition = useRef(null); // Track last logged position
+  const lastLoggedPosition = useRef(null);
 
   useEffect(() => {
-    let unsubscribe;
     if (!sessionIdRef.current || !userAId || !userBId || !currentUserId) {
       console.error('Invalid session or user IDs:', { sessionId: sessionIdRef.current, userAId, userBId, currentUserId });
       return;
     }
-    console.log('NicAssistScreen initialized for', currentUserId, 'isUserA:', isUserA, 'sessionId:', sessionId);
 
     const init = async () => {
       try {
@@ -74,9 +72,8 @@ export default function NicAssistScreen() {
         const userBDocRef = doc(db, 'users', userBId);
         await updateDoc(userADocRef, { sessionId: sessionIdRef.current }, { merge: true });
         await updateDoc(userBDocRef, { sessionId: sessionIdRef.current }, { merge: true });
-        console.log('Session initialized with sessionId:', sessionIdRef.current);
 
-        unsubscribe = onSnapshot(doc(db, 'users', currentUserId), (docSnapshot) => {
+        unsubscribeSession.current = onSnapshot(doc(db, 'users', currentUserId), (docSnapshot) => {
           if (docSnapshot.exists() && !hasNavigatedRef.current) {
             const data = docSnapshot.data();
             if (data.showAlert && data.sessionId === sessionIdRef.current) {
@@ -89,7 +86,6 @@ export default function NicAssistScreen() {
         const chatDocRef = doc(db, 'chats', chatId);
         if (!(await getDoc(chatDocRef)).exists()) {
           await setDoc(chatDocRef, { participants: [userAId, userBId], unreadCount: { [userBId]: 0 }, lastMessage: null }, { merge: true });
-          console.log('Chat document initialized for:', chatId);
         }
 
         unsubscribeMessages.current = onSnapshot(collection(db, 'chats', chatId, 'messages'), (snapshot) => {
@@ -113,7 +109,7 @@ export default function NicAssistScreen() {
           }
         }, (error) => console.error('Chat doc listen error:', error));
 
-        unsubscribeLocations.current = onSnapshot(doc(db, 'users', userAId), (docSnapshot) => {
+        unsubscribeLocationA.current = onSnapshot(doc(db, 'users', userAId), (docSnapshot) => {
           if (docSnapshot.exists()) {
             const data = docSnapshot.data();
             if (data.location) {
@@ -121,7 +117,8 @@ export default function NicAssistScreen() {
             }
           }
         }, (error) => console.error('Location A listener error:', error));
-        unsubscribeLocations.current = onSnapshot(doc(db, 'users', userBId), (docSnapshot) => {
+
+        unsubscribeLocationB.current = onSnapshot(doc(db, 'users', userBId), (docSnapshot) => {
           if (docSnapshot.exists()) {
             const data = docSnapshot.data();
             if (data.location) {
@@ -129,6 +126,7 @@ export default function NicAssistScreen() {
             }
           }
         }, (error) => console.error('Location B listener error:', error));
+
       } catch (err) {
         console.error('Error initializing NicAssistScreen:', err);
       }
@@ -137,37 +135,52 @@ export default function NicAssistScreen() {
     init();
 
     const startLocationTracking = () => {
-  locationWatchId = Geolocation.watchPosition(
-    (position) => {
-      const { latitude, longitude } = position.coords;
-      const currentPosition = `${latitude},${longitude}`;
-      if (lastLoggedPosition.current !== currentPosition) {
-        const userDocRef = doc(db, 'users', currentUserId);
-        updateDoc(userDocRef, { location: { latitude, longitude }, lastUpdated: Date.now() }, { merge: true })
-          .then(() => {
-            // console.log(`📍 Location updated for ${currentUserId}: ${latitude}, ${longitude}`);
-            lastLoggedPosition.current = currentPosition;
-          })
-          .catch((error) => console.error('Location update error:', error));
-      }
-    },
-    (error) => console.error('Geolocation error:', error),
-    { enableHighAccuracy: true, distanceFilter: 2, interval: 2000 }
-  );
-};
+      if (locationWatchId) Geolocation.clearWatch(locationWatchId);
+      locationWatchId = Geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          const currentPosition = `${latitude},${longitude}`;
+          if (lastLoggedPosition.current !== currentPosition) {
+            const userDocRef = doc(db, 'users', currentUserId);
+            updateDoc(userDocRef, { location: { latitude, longitude }, lastUpdated: Date.now() }, { merge: true })
+              .then(() => lastLoggedPosition.current = currentPosition)
+              .catch((error) => console.error('Location update error:', error));
+          }
+        },
+        (error) => console.error('Geolocation error:', error),
+        { enableHighAccuracy: true, distanceFilter: 2, interval: 2000 }
+      );
+    };
 
     startLocationTracking();
 
+    // Cleanup on unmount
     return () => {
-      if (unsubscribe) unsubscribe();
+      if (unsubscribeSession.current) unsubscribeSession.current();
       if (unsubscribeMessages.current) unsubscribeMessages.current();
       if (unsubscribeChat.current) unsubscribeChat.current();
-      if (unsubscribeLocations.current) unsubscribeLocations.current();
+      if (unsubscribeLocationA.current) unsubscribeLocationA.current();
+      if (unsubscribeLocationB.current) unsubscribeLocationB.current();
       if (locationWatchId) Geolocation.clearWatch(locationWatchId);
       hasNavigatedRef.current = false;
       setShowAlert(false);
     };
   }, [userAId, userBId, sessionId, initialNicAssistLat, initialNicAssistLng]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      return () => {
+        if (unsubscribeSession.current) unsubscribeSession.current();
+        if (unsubscribeMessages.current) unsubscribeMessages.current();
+        if (unsubscribeChat.current) unsubscribeChat.current();
+        if (unsubscribeLocationA.current) unsubscribeLocationA.current();
+        if (unsubscribeLocationB.current) unsubscribeLocationB.current();
+        if (locationWatchId) Geolocation.clearWatch(locationWatchId);
+        hasNavigatedRef.current = false;
+        setShowAlert(false);
+      };
+    }, [])
+  );
 
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
@@ -187,9 +200,7 @@ export default function NicAssistScreen() {
         timestamp: Date.now(),
       });
       const chatDocRef = doc(db, 'chats', chatId);
-      await updateDoc(chatDocRef, { 
-        lastMessage: newMessage 
-      }, { merge: true });
+      await updateDoc(chatDocRef, { lastMessage: newMessage }, { merge: true });
       setNewMessage('');
     }
   };
