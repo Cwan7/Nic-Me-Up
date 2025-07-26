@@ -207,20 +207,11 @@ export default function App() {
             return;
           }
 
-          let nicAssistLat, nicAssistLng;
-          if (userAData?.NicAssists) {
-            const activeAssist = userAData.NicAssists.find(assist => assist.Active);
-            if (activeAssist) {
-              nicAssistLat = activeAssist.NicAssistLat;
-              nicAssistLng = activeAssist.NicAssistLng;
-            }
-          }
-          if (!nicAssistLat && notification?.data?.nicAssistLat) {
-            nicAssistLat = notification.data.nicAssistLat;
-            nicAssistLng = notification.data.nicAssistLng;
-          }
+          // Use notification data directly, ignoring userA's NicAssists
+          const nicAssistLat = notification.nicAssistLat;
+          const nicAssistLng = notification.nicAssistLng;
           if (!nicAssistLat || !nicAssistLng) {
-            console.error('❌ Could not retrieve nicAssistLat or nicAssistLng');
+            console.error('❌ Could not retrieve nicAssistLat or nicAssistLng from notification');
             return;
           }
 
