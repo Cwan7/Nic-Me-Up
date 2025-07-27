@@ -56,6 +56,8 @@ useEffect(() => {
     return;
   }
 
+  let firstLoad = true;
+
   const init = async () => {
     try {
       if (currentUserId !== userAId && currentUserId !== userBId) {
@@ -152,7 +154,13 @@ useEffect(() => {
 
             unsubscribeChat.current = onSnapshot(chatDocRef, (docSnapshot) => {
               if (docSnapshot.exists()) {
-                setUnreadCount(docSnapshot.data().unreadCount?.[currentUserId] || 0);
+                const data = docSnapshot.data();
+                setUnreadCount(data.unreadCount?.[currentUserId] || 0);
+                // Reset unreadCount to 0 on first load
+                if (firstLoad && data.unreadCount?.[currentUserId] > 0) {
+                  updateDoc(chatDocRef, { [`unreadCount.${currentUserId}`]: 0 }, { merge: true });
+                  firstLoad = false; // Set flag to false after first reset
+                }
               }
             }, (error) => console.error('Chat doc listen error for user:', currentUserId, error));
           } else {
