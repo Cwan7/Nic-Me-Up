@@ -156,10 +156,9 @@ useEffect(() => {
               if (docSnapshot.exists()) {
                 const data = docSnapshot.data();
                 setUnreadCount(data.unreadCount?.[currentUserId] || 0);
-                // Reset unreadCount to 0 on first load
                 if (firstLoad && data.unreadCount?.[currentUserId] > 0) {
                   updateDoc(chatDocRef, { [`unreadCount.${currentUserId}`]: 0 }, { merge: true });
-                  firstLoad = false; // Set flag to false after first reset
+                  firstLoad = false;
                 }
               }
             }, (error) => console.error('Chat doc listen error for user:', currentUserId, error));
@@ -181,7 +180,7 @@ useEffect(() => {
             setUserALocation(data.location);
           }
         }
-      }, (error) => console.error('Location A listener error for user:', currentUserId, error));
+      }, (error) => console.error('Location A listener error:', error));
 
       unsubscribeLocationB.current = onSnapshot(doc(db, 'users', userBId), (docSnapshot) => {
         if (docSnapshot.exists()) {
@@ -190,7 +189,7 @@ useEffect(() => {
             setUserBLocation(data.location);
           }
         }
-      }, (error) => console.error('Location B listener error for user:', currentUserId, error));
+      }, (error) => console.error('Location B listener error:', error));
 
     } catch (err) {
       console.error('Error in NicAssistScreen initialization for user:', currentUserId, err.message, err.stack);
@@ -200,28 +199,21 @@ useEffect(() => {
   init();
 
   const startLocationTracking = () => {
-    Geolocation.requestAuthorization((status) => {
-      if (status === 'granted') {
-        if (locationWatchId) Geolocation.clearWatch(locationWatchId);
-        locationWatchId = Geolocation.watchPosition(
-          (position) => {
-            const { latitude, longitude } = position.coords;
-            const currentPosition = `${latitude},${longitude}`;
-            if (lastLoggedPosition.current !== currentPosition) {
-              const userDocRef = doc(db, 'users', currentUserId);
-              updateDoc(userDocRef, { location: { latitude, longitude }, lastUpdated: Date.now() }, { merge: true })
-                .then(() => lastLoggedPosition.current = currentPosition)
-                .catch((error) => console.error('Location update error for user:', currentUserId, error));
-            }
-          },
-          (error) => console.error('Geolocation error for user:', currentUserId, error),
-          { enableHighAccuracy: true, distanceFilter: 2, interval: 2000 }
-        );
-      } else {
-        setUserALocation({ latitude: initialNicAssistLat || 39.7405, longitude: initialNicAssistLng || -104.9706 });
-        setUserBLocation({ latitude: initialNicAssistLat || 39.7405, longitude: initialNicAssistLng || -104.9706 });
-      }
-    });
+    if (locationWatchId) Geolocation.clearWatch(locationWatchId);
+    locationWatchId = Geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const currentPosition = `${latitude},${longitude}`;
+        if (lastLoggedPosition.current !== currentPosition) {
+          const userDocRef = doc(db, 'users', currentUserId);
+          updateDoc(userDocRef, { location: { latitude, longitude }, lastUpdated: Date.now() }, { merge: true })
+            .then(() => lastLoggedPosition.current = currentPosition)
+            .catch((error) => console.error('Location update error:', error));
+        }
+      },
+      (error) => console.error('Geolocation error:', error),
+      { enableHighAccuracy: true, distanceFilter: 2, interval: 2000 }
+    );
   };
 
   startLocationTracking();
