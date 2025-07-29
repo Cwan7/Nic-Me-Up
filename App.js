@@ -1,5 +1,5 @@
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
@@ -70,71 +70,105 @@ export default function App() {
   const isInitialMount = useRef(true);
   const hasNavigated = useRef(false);
   const navigationRef = useRef();
+  const locationSubscription = useRef(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
-      if (user) {
-        console.log('Auth state changed, user:', user?.uid);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
+      if (!firebaseUser) return;
 
-        // Fetch or register push token
-        const token = (await Notifications.getExpoPushTokenAsync({ projectId: Constants.expoConfig.extra?.eas?.projectId })).data;
-        console.log(`${user.displayName} Expo Push Token:`, token);
+      const token = (await Notifications.getExpoPushTokenAsync({ projectId: Constants.expoConfig.extra?.eas?.projectId })).data;
+      const userDocRef = doc(db, 'users', firebaseUser.uid);
+      const userDoc = await getDoc(userDocRef);
 
-        // Update Firestore user data
-        const userDocRef = doc(db, 'users', user.uid);
-        const userDoc = await getDoc(userDocRef);
+      await setDoc(userDocRef, {
+        flavors: userDoc.exists() ? userDoc.data().flavors : 'Random',
+        nicQuestDistance: userDoc.exists() ? userDoc.data().nicQuestDistance : 400,
+        notes: userDoc.exists() ? userDoc.data().notes : 'Notes for NicQuest',
+        photoURL: userDoc.exists() ? userDoc.data().photoURL : null,
+        pouchType: userDoc.exists() ? userDoc.data().pouchType : 'Random',
+        strength: userDoc.exists() ? userDoc.data().strength : '3mg-6mg',
+        expoPushToken: token,
+      }, { merge: true });
+
+      const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+      const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
+      const granted = foregroundStatus === 'granted' && backgroundStatus === 'granted';
+      setLocationPermission(granted ? 'granted' : 'denied');
+
+      if (granted) {
+        const initialLoc = Device.isDevice
+          ? await Location.getCurrentPositionAsync({})
+          : { coords: { latitude: 39.7405, longitude: -104.9706, timestamp: new Date().toISOString() } };
+
         await setDoc(userDocRef, {
-          flavors: userDoc.exists() && userDoc.data().flavors ? userDoc.data().flavors : 'Random',
-          nicQuestDistance: userDoc.exists() && userDoc.data().nicQuestDistance ? userDoc.data().nicQuestDistance : 400,
-          notes: userDoc.exists() && userDoc.data().notes ? userDoc.data().notes : 'Notes for NicQuest',
-          photoURL: userDoc.exists() && userDoc.data().photoURL ? userDoc.data().photoURL : null,
-          pouchType: userDoc.exists() && userDoc.data().pouchType ? userDoc.data().pouchType : 'Random',
-          strength: userDoc.exists() && userDoc.data().strength ? userDoc.data().strength : '3mg-6mg',
-          expoPushToken: token,
+          location: {
+            latitude: initialLoc.coords.latitude,
+            longitude: initialLoc.coords.longitude,
+            timestamp: initialLoc.timestamp || new Date().toISOString(),
+          }
         }, { merge: true });
-        console.log('Firestore user document initialized or updated for UID:', user.uid);
-
-        // Handle location permission
-        if (!locationPermission) {
-          const { status } = await Location.requestForegroundPermissionsAsync();
-          if (Platform.OS === 'ios') {
-            const backgroundStatus = await Location.requestBackgroundPermissionsAsync();
-            if (backgroundStatus.status !== 'granted') {
-              console.log('Background location permission not granted');
-            }
-          }
-          setLocationPermission(status);
-          if (status === 'granted') {
-            let location;
-            if (!Device.isDevice) {
-              location = { coords: { latitude: 39.7405, longitude: -104.9706, timestamp: new Date().toISOString() } };
-              console.log('Forcing hardcoded simulator location:', location.coords);
-              await setDoc(userDocRef, { location: location.coords }, { merge: true }); // Force update to Firestore
-            } else {
-              location = await Location.getCurrentPositionAsync({});
-              console.log('Using live device location:', location.coords);
-            }
-            await setDoc(userDocRef, {
-              location: {
-                latitude: location.coords.latitude,
-                longitude: location.coords.longitude,
-                timestamp: location.timestamp || new Date().toISOString(),
-              },
-            }, { merge: true });
-            console.log('Location updated in Firestore for UID:', user.uid);
-          } else {
-            Alert.alert(
-              'Location Permission Needed',
-              'NicMeUp requires location access to find nearby users for NicQuest. Please enable it in Settings under Privacy > Location Services.',
-              [{ text: 'OK', onPress: () => console.log('User instructed to enable location') }]
-            );
-          }
-        }
+      } else {
+        Alert.alert(
+          'Location Permission Needed',
+          'Please enable location in Settings under Privacy > Location Services.',
+          [{ text: 'OK' }]
+        );
       }
     });
+
     return () => unsubscribe();
-  }, [locationPermission]);
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const startLocationTracking = async () => {
+      if (!auth.currentUser || locationPermission !== 'granted' || !Device.isDevice) return;
+
+      if (locationSubscription.current) {
+        locationSubscription.current.remove();
+        console.log('🧹 Removed existing location watcher');
+      }
+
+      locationSubscription.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Highest,
+          timeInterval: 2000,
+          distanceInterval: 5,
+        },
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          const update = {
+            location: {
+              latitude,
+              longitude,
+              timestamp: Date.now(),
+            },
+          };
+          try {
+            await updateDoc(doc(db, 'users', auth.currentUser.uid), update);
+            console.log(`📍 Updated: ${latitude}, ${longitude}`);
+          } catch (err) {
+            console.error('🔥 Failed to update location:', err.message);
+          }
+        }
+      );
+
+      console.log('✅ Started live location tracking');
+    };
+
+    startLocationTracking();
+
+    return () => {
+      isMounted = false;
+      if (locationSubscription.current) {
+        locationSubscription.current.remove();
+        locationSubscription.current = null;
+        console.log('🧹 Cleaned up live location tracking');
+      }
+    };
+  }, [locationPermission, user]);
 
   useEffect(() => {
     if (isInitialMount.current) {
@@ -186,6 +220,11 @@ export default function App() {
       if (responseSubscription && typeof responseSubscription.remove === 'function') {
         responseSubscription.remove();
       }
+      if (locationSubscription.current) { // Fixed to use locationSubscription
+        locationSubscription.current.remove();
+        locationSubscription.current = null;
+        console.log('🧹 Cleaned up location watcher on unmount');
+      }
     };
   }, []);
 
@@ -207,7 +246,6 @@ export default function App() {
             return;
           }
 
-          // Use notification data directly, ignoring userA's NicAssists
           const nicAssistLat = notification.nicAssistLat;
           const nicAssistLng = notification.nicAssistLng;
           if (!nicAssistLat || !nicAssistLng) {

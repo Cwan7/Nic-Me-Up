@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Text, View, TouchableOpacity, StyleSheet, Dimensions, ScrollView, Alert } from 'react-native';
 import MapView, { Marker, Circle } from 'react-native-maps';
 import { auth, db } from '../../firebase';
-import { collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 
 // Functions for Notifications/Distance
@@ -78,6 +78,10 @@ export default function HomeScreen({ route }) {
   const userName = user.displayName || 'Friend';
   const navigation = useNavigation();
   const isFocused = useIsFocused();
+  const unsubscribeLocation = useRef(null);
+  const mapRef = useRef(null)
+
+  const [region, setRegion] = useState(null);
 
   useEffect(() => {
     const loadUserData = async () => {
@@ -90,7 +94,15 @@ export default function HomeScreen({ route }) {
         const userData = userDoc.data();
         if (userData && userData.location) {
           setUserLocation(userData.location);
-          setQuestDistance(userData.nicQuestDistance || 250); // Update with user's NicQuestDistance
+          setQuestDistance(userData.nicQuestDistance || 250);
+          const { latitude, longitude } = userData.location;
+          setRegion({
+            latitude,
+            longitude,
+            latitudeDelta: 0.003,
+            longitudeDelta: 0.003,
+          });
+          console.log('Initial user location:', userData.location);
         }
 
         const querySnapshot = await getDocs(collection(db, 'users'));
@@ -111,16 +123,40 @@ export default function HomeScreen({ route }) {
           }
         });
         setNicAssists(assists);
+
+        // Real-time location updates without zoom change
+        unsubscribeLocation.current = onSnapshot(userDocRef, (docSnapshot) => {
+          if (docSnapshot.exists() && docSnapshot.data().location) {
+            const newLocation = docSnapshot.data().location;
+            setUserLocation(newLocation);
+            if (mapRef.current) {
+              mapRef.current.animateToRegion({
+                latitude: newLocation.latitude,
+                longitude: newLocation.longitude,
+                latitudeDelta: region.latitudeDelta,
+                longitudeDelta: region.longitudeDelta,
+              }, 1000); 
+            }
+
+            console.log('Updated user location:', newLocation);
+          } else {
+            console.log('No location data in Firestore');
+          }
+        }, (error) => console.error('Location listener error:', error));
       } catch (error) {
         console.error('Error loading user data:', error);
       }
     };
 
     loadUserData();
+
+    return () => {
+      if (unsubscribeLocation.current) unsubscribeLocation.current();
+    };
   }, [isFocused]);
 
   const handleNicQuest = async () => {
-    console.log(`📲${userName} NicQuest button pressed`);
+    console.log(`📲 ${userName} NicQuest button pressed`);
     const currentUser = auth.currentUser;
     if (!currentUser || !userLocation) return;
 
@@ -154,7 +190,6 @@ export default function HomeScreen({ route }) {
               notifiedUsers.push({ userId: docSnap.id, assist });
               sendNicQuestNotification(userName, currentUser.uid, otherUserData, userLocation, assist);
 
-              // Track the nearest assist for NQWS
               if (distance < minDistance) {
                 minDistance = distance;
                 nearestAssist = assist;
@@ -166,7 +201,6 @@ export default function HomeScreen({ route }) {
 
       if (notifiedUsers.length > 0) {
         console.log(`📬 NicQuest sent to ${notifiedUsers.length} users: ${notifiedUsers.map(n => n.userId).join(', ')}`);
-        // Navigate to NQWS with the nearest assist's coordinates
         navigation.navigate('NicQuestWaiting', {
           userId: currentUser.uid,
           questDistance,
@@ -192,15 +226,10 @@ export default function HomeScreen({ route }) {
         <TouchableOpacity style={styles.nicQuestButton} onPress={handleNicQuest}>
           <Text style={styles.text}>NicQuest</Text>
         </TouchableOpacity>
-        {userLocation && (
+        {region ? (
           <MapView
             style={styles.map}
-            initialRegion={{
-              latitude: userLocation.latitude,
-              longitude: userLocation.longitude,
-              latitudeDelta: 0.0922,
-              longitudeDelta: 0.0421,
-            }}
+            region={region}
           >
             {nicAssists.map((assist, index) => (
               <Marker
@@ -218,12 +247,14 @@ export default function HomeScreen({ route }) {
             />
             <Circle
               center={{ latitude: userLocation.latitude, longitude: userLocation.longitude }}
-              radius={questDistance * 0.3048} // Convert feet to meters
-              fillColor="rgba(0, 0, 255, 0.2)" // Blue circle with 20% opacity
-              strokeColor="rgba(0, 0, 255, 0.5)" // Blue outline with 50% opacity
+              radius={questDistance * 0.3048}
+              fillColor="rgba(0, 0, 255, 0.2)"
+              strokeColor="rgba(0, 0, 255, 0.5)"
               strokeWidth={1}
             />
           </MapView>
+        ) : (
+          <Text style={styles.errorText}>Waiting for location data...</Text>
         )}
         <View style={styles.activitySection}>
           <Text style={styles.activityTitle}>Recent Activity</Text>
@@ -233,7 +264,7 @@ export default function HomeScreen({ route }) {
       </ScrollView>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#dcdcdc' },
