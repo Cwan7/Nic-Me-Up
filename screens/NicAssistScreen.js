@@ -51,6 +51,20 @@ export default function NicAssistScreen() {
   let locationWatchId = null;
   const lastLoggedPosition = useRef(null);
 
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371e3; // Earth radius in meters
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; // Distance in meters
+  };
+
   useEffect(() => {
     if (!sessionIdRef.current || !userAId || !userBId || !currentUserId) {
       return;
@@ -178,6 +192,7 @@ export default function NicAssistScreen() {
             const data = docSnapshot.data();
             if (data.location) {
               setUserALocation(data.location);
+              checkProximity();
             }
           }
         }, (error) => console.error('Location A listener error:', error));
@@ -187,6 +202,7 @@ export default function NicAssistScreen() {
             const data = docSnapshot.data();
             if (data.location) {
               setUserBLocation(data.location);
+              checkProximity();
             }
           }
         }, (error) => console.error('Location B listener error:', error));
@@ -209,6 +225,7 @@ export default function NicAssistScreen() {
             updateDoc(userDocRef, { location: { latitude, longitude }, lastUpdated: Date.now() }, { merge: true })
               .then(() => lastLoggedPosition.current = currentPosition)
               .catch((error) => console.error('Location update error:', error));
+            checkProximity();
           }
         },
         (error) => console.error('Geolocation error:', error),
@@ -217,6 +234,34 @@ export default function NicAssistScreen() {
     };
 
     startLocationTracking();
+
+    const checkProximity = async () => {
+      const distance = calculateDistance(userALocation.latitude, userALocation.longitude, userBLocation.latitude, userBLocation.longitude);
+      if (distance <= 3 && userAData && userBData && sessionIdRef.current) {
+        const activityId = `${userAId}_${userBId}_${Date.now()}`;
+        const activityData = {
+          userAId,
+          userBId,
+          timestamp: Date.now(),
+          sessionId: sessionIdRef.current,
+          distance: distance.toFixed(2),
+        };
+
+        // Store in per-user documents
+        await updateDoc(doc(db, 'users', userAId), {
+          recentActivity: FieldValue.arrayUnion({ ...activityData, type: isUserA ? 'NicQuest' : 'NicAssist' }),
+        }, { merge: true });
+        await updateDoc(doc(db, 'users', userBId), {
+          recentActivity: FieldValue.arrayUnion({ ...activityData, type: isUserA ? 'NicAssist' : 'NicQuest' }),
+        }, { merge: true });
+
+        // Store in recentActivities collection
+        const activityRef = doc(db, 'recentActivities', activityId);
+        await setDoc(activityRef, activityData, { merge: true })
+          .then(() => console.log('Recent activity logged:', userAId, userBId))
+          .catch((error) => console.error('Error logging recent activity:', error));
+      }
+    };
 
     return () => {
       if (unsubscribeSession.current) unsubscribeSession.current();
