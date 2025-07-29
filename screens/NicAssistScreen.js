@@ -35,8 +35,8 @@ export default function NicAssistScreen() {
   const unsubscribeSession = useRef(null);
   const unsubscribeMessages = useRef(null);
   const unsubscribeChat = useRef(null);
-  const unsubscribeLocationA = useRef(null); // Separate ref for userA
-  const unsubscribeLocationB = useRef(null); // Separate ref for userB
+  const unsubscribeLocationA = useRef(null); 
+  const unsubscribeLocationB = useRef(null); 
   const hasNavigatedRef = useRef(false);
   const [showAlert, setShowAlert] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -51,184 +51,184 @@ export default function NicAssistScreen() {
   let locationWatchId = null;
   const lastLoggedPosition = useRef(null);
 
-useEffect(() => {
-  if (!sessionIdRef.current || !userAId || !userBId || !currentUserId) {
-    return;
-  }
+  useEffect(() => {
+    if (!sessionIdRef.current || !userAId || !userBId || !currentUserId) {
+      return;
+    }
 
-  let firstLoad = true;
+    let firstLoad = true;
 
-  const init = async () => {
-    try {
-      if (currentUserId !== userAId && currentUserId !== userBId) {
-        return;
-      }
-      if (!userAId || !userBId) {
-        return;
-      }
-      const userADoc = await getDoc(doc(db, 'users', userAId));
-      const userBDoc = await getDoc(doc(db, 'users', userBId));
-      if (!userADoc.exists() || !userBDoc.exists()) {
-        return;
-      }
-      setUserAData(userADoc.data());
-      setUserBData(userBDoc.data());
-
-      const userADocRef = doc(db, 'users', userAId);
-      const userBDocRef = doc(db, 'users', userBId);
-      await updateDoc(userADocRef, { sessionId: sessionIdRef.current }, { merge: true });
-      await updateDoc(userBDocRef, { sessionId: sessionIdRef.current }, { merge: true });
-
-      unsubscribeSession.current = onSnapshot(doc(db, 'users', currentUserId), (docSnapshot) => {
-        if (docSnapshot.exists() && !hasNavigatedRef.current) {
-          const data = docSnapshot.data();
-          if (data.showAlert && data.sessionId === sessionIdRef.current) {
-            setShowAlert(true);
-          }
-        }
-      }, (error) => console.error('Session status listener error for user:', currentUserId, error));
-
-      const chatId = [userAId, userBId].sort().join('_');
-      const chatDocRef = doc(db, 'chats', chatId);
-
-      const createAndVerifyChat = async (attempt = 0) => {
-        if (attempt > 3) {
+    const init = async () => {
+      try {
+        if (currentUserId !== userAId && currentUserId !== userBId) {
           return;
         }
-        try {
-          let chatDoc;
-          try {
-            chatDoc = await getDoc(chatDocRef);
-          } catch (getDocError) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            await createAndVerifyChat(attempt + 1);
-            return;
-          }
-          if (!chatDoc.exists()) {
-            await setDoc(chatDocRef, { participants: [userAId, userBId], unreadCount: { [userBId]: 0, [userAId]: 0 }, lastMessage: null }, { merge: true });
-            let retries = 0;
-            while (retries < 5) {
-              const latestChatDoc = await getDoc(chatDocRef);
-              const participants = latestChatDoc.data()?.participants || [];
-              if (participants.includes(currentUserId)) {
-                break;
-              }
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              retries++;
+        if (!userAId || !userBId) {
+          return;
+        }
+        const userADoc = await getDoc(doc(db, 'users', userAId));
+        const userBDoc = await getDoc(doc(db, 'users', userBId));
+        if (!userADoc.exists() || !userBDoc.exists()) {
+          return;
+        }
+        setUserAData(userADoc.data());
+        setUserBData(userBDoc.data());
+
+        const userADocRef = doc(db, 'users', userAId);
+        const userBDocRef = doc(db, 'users', userBId);
+        await updateDoc(userADocRef, { sessionId: sessionIdRef.current }, { merge: true });
+        await updateDoc(userBDocRef, { sessionId: sessionIdRef.current }, { merge: true });
+
+        unsubscribeSession.current = onSnapshot(doc(db, 'users', currentUserId), (docSnapshot) => {
+          if (docSnapshot.exists() && !hasNavigatedRef.current) {
+            const data = docSnapshot.data();
+            if (data.showAlert && data.sessionId === sessionIdRef.current) {
+              setShowAlert(true);
             }
           }
+        }, (error) => console.error('Session status listener error for user:', currentUserId, error));
 
-          const verifiedChatDoc = await getDoc(chatDocRef);
-          if (verifiedChatDoc.exists() && verifiedChatDoc.data().participants.includes(currentUserId)) {
-          } else {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            await createAndVerifyChat(attempt + 1);
+        const chatId = [userAId, userBId].sort().join('_');
+        const chatDocRef = doc(db, 'chats', chatId);
+
+        const createAndVerifyChat = async (attempt = 0) => {
+          if (attempt > 3) {
             return;
           }
-        } catch (error) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          await createAndVerifyChat(attempt + 1);
-        }
-      };
-      await createAndVerifyChat();
-
-      const attachListeners = async (attempt = 0) => {
-        if (attempt > 3) {
-          return;
-        }
-        try {
-          const docSnap = await getDoc(chatDocRef);
-          if (docSnap.exists() && docSnap.data().participants.includes(currentUserId)) {
-            unsubscribeMessages.current = onSnapshot(collection(db, 'chats', chatId, 'messages'), (snapshot) => {
-              const msgList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-              const sortedMessages = msgList.sort((a, b) => a.timestamp - b.timestamp);
-              setMessages(sortedMessages);
-              if (sortedMessages.length > 0 && sortedMessages[sortedMessages.length - 1].senderId !== currentUserId && !modalVisible) {
-                const newCount = unreadCount + 1;
-                updateDoc(chatDocRef, { 
-                  [`unreadCount.${currentUserId}`]: newCount,
-                  lastMessage: sortedMessages[sortedMessages.length - 1].text 
-                }, { merge: true });
-              }
-            }, (error) => console.error('Message listen error for user:', currentUserId, error));
-
-            unsubscribeChat.current = onSnapshot(chatDocRef, (docSnapshot) => {
-              if (docSnapshot.exists()) {
-                const data = docSnapshot.data();
-                setUnreadCount(data.unreadCount?.[currentUserId] || 0);
-                if (firstLoad && data.unreadCount?.[currentUserId] > 0) {
-                  updateDoc(chatDocRef, { [`unreadCount.${currentUserId}`]: 0 }, { merge: true });
-                  firstLoad = false;
+          try {
+            let chatDoc;
+            try {
+              chatDoc = await getDoc(chatDocRef);
+            } catch (getDocError) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              await createAndVerifyChat(attempt + 1);
+              return;
+            }
+            if (!chatDoc.exists()) {
+              await setDoc(chatDocRef, { participants: [userAId, userBId], unreadCount: { [userBId]: 0, [userAId]: 0 }, lastMessage: null }, { merge: true });
+              let retries = 0;
+              while (retries < 5) {
+                const latestChatDoc = await getDoc(chatDocRef);
+                const participants = latestChatDoc.data()?.participants || [];
+                if (participants.includes(currentUserId)) {
+                  break;
                 }
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                retries++;
               }
-            }, (error) => console.error('Chat doc listen error for user:', currentUserId, error));
-          } else {
+            }
+
+            const verifiedChatDoc = await getDoc(chatDocRef);
+            if (verifiedChatDoc.exists() && verifiedChatDoc.data().participants.includes(currentUserId)) {
+            } else {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              await createAndVerifyChat(attempt + 1);
+              return;
+            }
+          } catch (error) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            await createAndVerifyChat(attempt + 1);
+          }
+        };
+        await createAndVerifyChat();
+
+        const attachListeners = async (attempt = 0) => {
+          if (attempt > 3) {
+            return;
+          }
+          try {
+            const docSnap = await getDoc(chatDocRef);
+            if (docSnap.exists() && docSnap.data().participants.includes(currentUserId)) {
+              unsubscribeMessages.current = onSnapshot(collection(db, 'chats', chatId, 'messages'), (snapshot) => {
+                const msgList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const sortedMessages = msgList.sort((a, b) => a.timestamp - b.timestamp);
+                setMessages(sortedMessages);
+                if (sortedMessages.length > 0 && sortedMessages[sortedMessages.length - 1].senderId !== currentUserId && !modalVisible) {
+                  const newCount = unreadCount + 1;
+                  updateDoc(chatDocRef, { 
+                    [`unreadCount.${currentUserId}`]: newCount,
+                    lastMessage: sortedMessages[sortedMessages.length - 1].text 
+                  }, { merge: true });
+                }
+              }, (error) => console.error('Message listen error for user:', currentUserId, error));
+
+              unsubscribeChat.current = onSnapshot(chatDocRef, (docSnapshot) => {
+                if (docSnapshot.exists()) {
+                  const data = docSnapshot.data();
+                  setUnreadCount(data.unreadCount?.[currentUserId] || 0);
+                  if (firstLoad && data.unreadCount?.[currentUserId] > 0) {
+                    updateDoc(chatDocRef, { [`unreadCount.${currentUserId}`]: 0 }, { merge: true });
+                    firstLoad = false;
+                  }
+                }
+              }, (error) => console.error('Chat doc listen error for user:', currentUserId, error));
+            } else {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              await attachListeners(attempt + 1);
+            }
+          } catch (error) {
             await new Promise(resolve => setTimeout(resolve, 2000));
             await attachListeners(attempt + 1);
           }
-        } catch (error) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          await attachListeners(attempt + 1);
-        }
-      };
-      await attachListeners();
+        };
+        await attachListeners();
 
-      unsubscribeLocationA.current = onSnapshot(doc(db, 'users', userAId), (docSnapshot) => {
-        if (docSnapshot.exists()) {
-          const data = docSnapshot.data();
-          if (data.location) {
-            setUserALocation(data.location);
+        unsubscribeLocationA.current = onSnapshot(doc(db, 'users', userAId), (docSnapshot) => {
+          if (docSnapshot.exists()) {
+            const data = docSnapshot.data();
+            if (data.location) {
+              setUserALocation(data.location);
+            }
           }
-        }
-      }, (error) => console.error('Location A listener error:', error));
+        }, (error) => console.error('Location A listener error:', error));
 
-      unsubscribeLocationB.current = onSnapshot(doc(db, 'users', userBId), (docSnapshot) => {
-        if (docSnapshot.exists()) {
-          const data = docSnapshot.data();
-          if (data.location) {
-            setUserBLocation(data.location);
+        unsubscribeLocationB.current = onSnapshot(doc(db, 'users', userBId), (docSnapshot) => {
+          if (docSnapshot.exists()) {
+            const data = docSnapshot.data();
+            if (data.location) {
+              setUserBLocation(data.location);
+            }
           }
-        }
-      }, (error) => console.error('Location B listener error:', error));
+        }, (error) => console.error('Location B listener error:', error));
 
-    } catch (err) {
-      console.error('Error in NicAssistScreen initialization for user:', currentUserId, err.message, err.stack);
-    }
-  };
+      } catch (err) {
+        console.error('Error in NicAssistScreen initialization for user:', currentUserId, err.message, err.stack);
+      }
+    };
 
-  init();
+    init();
 
-  const startLocationTracking = () => {
-    if (locationWatchId) Geolocation.clearWatch(locationWatchId);
-    locationWatchId = Geolocation.watchPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        const currentPosition = `${latitude},${longitude}`;
-        if (lastLoggedPosition.current !== currentPosition) {
-          const userDocRef = doc(db, 'users', currentUserId);
-          updateDoc(userDocRef, { location: { latitude, longitude }, lastUpdated: Date.now() }, { merge: true })
-            .then(() => lastLoggedPosition.current = currentPosition)
-            .catch((error) => console.error('Location update error:', error));
-        }
-      },
-      (error) => console.error('Geolocation error:', error),
-      { enableHighAccuracy: true, distanceFilter: 2, interval: 2000 }
-    );
-  };
+    const startLocationTracking = () => {
+      if (locationWatchId) Geolocation.clearWatch(locationWatchId);
+      locationWatchId = Geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          const currentPosition = `${latitude},${longitude}`;
+          if (lastLoggedPosition.current !== currentPosition) {
+            const userDocRef = doc(db, 'users', currentUserId);
+            updateDoc(userDocRef, { location: { latitude, longitude }, lastUpdated: Date.now() }, { merge: true })
+              .then(() => lastLoggedPosition.current = currentPosition)
+              .catch((error) => console.error('Location update error:', error));
+          }
+        },
+        (error) => console.error('Geolocation error:', error),
+        { enableHighAccuracy: true, distanceFilter: 2, interval: 2000 }
+      );
+    };
 
-  startLocationTracking();
+    startLocationTracking();
 
-  return () => {
-    if (unsubscribeSession.current) unsubscribeSession.current();
-    if (unsubscribeMessages.current) unsubscribeMessages.current();
-    if (unsubscribeChat.current) unsubscribeChat.current();
-    if (unsubscribeLocationA.current) unsubscribeLocationA.current();
-    if (unsubscribeLocationB.current) unsubscribeLocationB.current();
-    if (locationWatchId) Geolocation.clearWatch(locationWatchId);
-    hasNavigatedRef.current = false;
-    setShowAlert(false);
-  };
-}, [userAId, userBId, sessionId, initialNicAssistLat, initialNicAssistLng]);
+    return () => {
+      if (unsubscribeSession.current) unsubscribeSession.current();
+      if (unsubscribeMessages.current) unsubscribeMessages.current();
+      if (unsubscribeChat.current) unsubscribeChat.current();
+      if (unsubscribeLocationA.current) unsubscribeLocationA.current();
+      if (unsubscribeLocationB.current) unsubscribeLocationB.current();
+      if (locationWatchId) Geolocation.clearWatch(locationWatchId);
+      hasNavigatedRef.current = false;
+      setShowAlert(false);
+    };
+  }, [userAId, userBId, sessionId, initialNicAssistLat, initialNicAssistLng]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -360,9 +360,23 @@ useEffect(() => {
               longitudeDelta: 0.003,
             }}
           >
-            <Marker key="userA" coordinate={userALocation} title={`${userAData.username}'s Location`} pinColor="blue" />
-            <Marker key="userB" coordinate={userBLocation} title={`${userBData.username}'s Location`} pinColor="#FF6347" />
-            <Marker key="nicAssist" coordinate={{ latitude: nicAssistLat, longitude: nicAssistLng }} title="NicAssist Location" pinColor="green" />
+            {userAData.photoURL && (
+              <Marker key="userA" coordinate={userALocation} title={`${userAData.username}'s Location`}>
+                <Image
+                  source={{ uri: userAData.photoURL }}
+                  style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: 'white' }}
+                />
+              </Marker>
+            )}
+            {userBData.photoURL && (
+              <Marker key="userB" coordinate={userBLocation} title={`${userBData.username}'s Location`}>
+                <Image
+                  source={{ uri: userBData.photoURL }}
+                  style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: 'white' }}
+                />
+              </Marker>
+            )}
+            <Marker key="nicAssist" coordinate={{ latitude: nicAssistLat, longitude: nicAssistLng }} title="NicAssist Location" pinColor="#60a8b8" />
           </MapView>
         </View>
       )}
