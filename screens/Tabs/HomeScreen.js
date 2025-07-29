@@ -151,7 +151,7 @@ export default function HomeScreen({ route }) {
         if (userData?.location) {
           setUserLocation(userData.location);
           setQuestDistance(userData.nicQuestDistance || 250);
-          user.photoURL = userData.photoURL || user.photoURL; 
+          user.photoURL = userData.photoURL || user.photoURL;
 
           const { latitude, longitude } = userData.location;
           setRegion({
@@ -169,9 +169,14 @@ export default function HomeScreen({ route }) {
 
         const querySnapshot = await getDocs(collection(db, 'users'));
         const assists = [];
+        const now = Date.now();
+
         querySnapshot.forEach(docSnap => {
           const data = docSnap.data();
-          if (docSnap.id !== currentUser.uid && data.NicAssists) {
+          if (docSnap.id === currentUser.uid) return;
+
+          // Active NicAssist markers
+          if (data.NicAssists) {
             data.NicAssists.forEach(assist => {
               if (assist.Active) {
                 assists.push({
@@ -183,8 +188,33 @@ export default function HomeScreen({ route }) {
               }
             });
           }
+
+          // Location marker if updated in last 5 min
+          if (
+            data.location?.latitude &&
+            data.location?.longitude &&
+            data.location?.timestamp &&
+            now - data.location.timestamp <= 5 * 60 * 1000
+          ) {
+            assists.push({
+              userId: docSnap.id,
+              NicAssistAddress: 'Current Location',
+              NicAssistLat: data.location.latitude,
+              NicAssistLng: data.location.longitude,
+            });
+          }
         });
-        setNicAssists(assists);
+
+        // Optional: deduplicate by lat/lng if needed
+        const seen = new Set();
+        const uniqueAssists = assists.filter(a => {
+          const key = `${a.NicAssistLat.toFixed(5)}-${a.NicAssistLng.toFixed(5)}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
+        setNicAssists(uniqueAssists);
 
         unsubscribeLocation.current = onSnapshot(userDocRef, (docSnapshot) => {
           const data = docSnapshot.data();
@@ -196,11 +226,10 @@ export default function HomeScreen({ route }) {
               mapRef.current.animateToRegion({
                 latitude: newLocation.latitude,
                 longitude: newLocation.longitude,
-                ...regionRef.current, // preserves zoom level
+                ...regionRef.current,
               }, 1000);
             }
 
-            // Update region state only if null
             if (!region) {
               setRegion({
                 latitude: newLocation.latitude,
@@ -208,8 +237,6 @@ export default function HomeScreen({ route }) {
                 ...regionRef.current,
               });
             }
-
-            console.log('🔄 Firestore location updated:', newLocation);
           }
         }, (error) => {
           console.error('🔥 Firestore location listener error:', error);
@@ -227,7 +254,7 @@ export default function HomeScreen({ route }) {
     };
   }, [isFocused]);
 
-const handleNicQuest = async () => {
+  const handleNicQuest = async () => {
   console.log(`📲 ${userName} NicQuest button pressed`);
   const currentUser = auth.currentUser;
   if (!currentUser || !userLocation) return;
@@ -330,12 +357,13 @@ const handleNicQuest = async () => {
   }
 };
 
-
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-        <Text style={styles.welcomeText}>Hey
-          <Text style={styles.username}> {userName}</Text>! Need a pouch?</Text>
+        <Text style={styles.welcomeText}>
+          Hey
+          <Text style={styles.username}> {userName}</Text>! Need a pouch?
+        </Text>
         <Text style={styles.subText}>Tap to send a NicQuest to nearby users.</Text>
 
         <TouchableOpacity style={styles.nicQuestButton} onPress={handleNicQuest}>
@@ -356,63 +384,74 @@ const handleNicQuest = async () => {
           >
             {nicAssists.map((assist, index) => (
               <Marker
-                key={index}
-                coordinate={{ latitude: assist.NicAssistLat, longitude: assist.NicAssistLng }}
+                key={`assist-${index}`}
+                coordinate={{
+                  latitude: assist.NicAssistLat,
+                  longitude: assist.NicAssistLng,
+                }}
                 title={assist.NicAssistAddress}
                 pinColor="#FF6347"
               />
             ))}
 
             {userLocation && (
-            <>
-              <Marker
-                key="currentUser"
-                coordinate={{
-                  latitude: userLocation.latitude,
-                  longitude: userLocation.longitude,
-                }}
-              >
-                {user.photoURL ? (
-                  <Image
-                    source={{ uri: user.photoURL }}
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 20,
-                      borderWidth: 2,
-                      borderColor: 'white',
-                    }}
-                  />
-                ) : (
-                  <View style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 20,
-                    backgroundColor: '#4682B4',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    borderWidth: 2,
-                    borderColor: 'white',
-                  }}>
-                    <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 18 }}>
-                      {user.displayName ? user.displayName[0].toUpperCase() : 'U'}
-                    </Text>
-                  </View>
-                )}
-              </Marker>
+              <>
+                <Circle
+                  center={{
+                    latitude: userLocation.latitude,
+                    longitude: userLocation.longitude,
+                  }}
+                  radius={questDistance * 0.3048}
+                  fillColor="rgba(0, 0, 255, 0.2)"
+                  strokeColor="rgba(0, 0, 255, 0.5)"
+                  strokeWidth={1}
+                />
 
-              <Circle
-                center={{
-                  latitude: userLocation.latitude,
-                  longitude: userLocation.longitude,
-                }}
-                radius={questDistance * 0.3048}
-                fillColor="rgba(0, 0, 255, 0.2)"
-                strokeColor="rgba(0, 0, 255, 0.5)"
-                strokeWidth={1}
-              />
-            </>
-          )}
+                <Marker
+                  key="currentUser"
+                  coordinate={{
+                    latitude: userLocation.latitude,
+                    longitude: userLocation.longitude,
+                  }}
+                >
+                  {user.photoURL ? (
+                    <Image
+                      source={{ uri: user.photoURL }}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        borderWidth: 2,
+                        borderColor: 'white',
+                      }}
+                    />
+                  ) : (
+                    <View
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        backgroundColor: '#4682B4',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        borderWidth: 2,
+                        borderColor: 'white',
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: 'white',
+                          fontWeight: 'bold',
+                          fontSize: 18,
+                        }}
+                      >
+                        {user.displayName ? user.displayName[0].toUpperCase() : 'U'}
+                      </Text>
+                    </View>
+                  )}
+                </Marker>
+              </>
+            )}
           </MapView>
         ) : (
           <Text style={styles.errorText}>Waiting for location data...</Text>
@@ -427,10 +466,6 @@ const handleNicQuest = async () => {
     </View>
   );
 }
-
-
-
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#dcdcdc' },
   scrollView: { flex: 1 },
