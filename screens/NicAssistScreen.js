@@ -35,8 +35,8 @@ export default function NicAssistScreen() {
   const unsubscribeSession = useRef(null);
   const unsubscribeMessages = useRef(null);
   const unsubscribeChat = useRef(null);
-  const unsubscribeLocationA = useRef(null); 
-  const unsubscribeLocationB = useRef(null); 
+  const unsubscribeLocationA = useRef(null);
+  const unsubscribeLocationB = useRef(null);
   const hasNavigatedRef = useRef(false);
   const [showAlert, setShowAlert] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -49,24 +49,32 @@ export default function NicAssistScreen() {
   const [userALocation, setUserALocation] = useState({ latitude: initialNicAssistLat, longitude: initialNicAssistLng });
   const [userBLocation, setUserBLocation] = useState({ latitude: initialNicAssistLat, longitude: initialNicAssistLng });
   const hasLoggedActivityRef = useRef(false);
-  const isCheckingRef = useRef(false);   
+  const isCheckingRef = useRef(false);
 
-  const checkProximityAndUpdate = useCallback(async () => {
-    if (
-      !userAId ||
-      !userBId ||
-      !sessionId ||
-      !userALocation ||
-      !userBLocation ||
-      hasLoggedActivityRef.current
-    ) {
-      return;
-    }
+const PROXIMITY_THRESHOLD = 3; 
 
-    const distance = getDistance(userALocation, userBLocation);
-    if (distance >= 4) return;
+const checkProximityAndUpdate = useCallback(async () => {
+  if (
+    !userAId ||
+    !userBId ||
+    !sessionId ||
+    !userALocation?.latitude ||
+    !userALocation?.longitude ||
+    !userBLocation?.latitude ||
+    !userBLocation?.longitude ||
+    hasLoggedActivityRef.current ||
+    isCheckingRef.current ||
+    userAId === userBId
+  ) {
+    return;
+  }
 
-    console.log('📏 Users are within 4 meters!');
+  isCheckingRef.current = true;
+  const distance = getDistance(userALocation, userBLocation);
+  console.log(`📏 Calculated distance: ${distance.toFixed(2)} meters between ${userAId} and ${userBId}`);
+
+  if (distance <= PROXIMITY_THRESHOLD) {
+    console.log(`📏 Users are within ${PROXIMITY_THRESHOLD} meters!`);
     hasLoggedActivityRef.current = true;
 
     const activityEntry = {
@@ -80,43 +88,46 @@ export default function NicAssistScreen() {
     const currentUserRef = doc(db, 'users', currentUserId);
 
     try {
-      // 1. Log to recentActivities (if not already there)
       const recentSnap = await getDoc(recentActivitiesRef);
       const existing = recentSnap.exists() ? recentSnap.data().activities || [] : [];
-
       const recentHasSession = existing.some((a) => a.sessionId === sessionId);
+
       if (!recentHasSession) {
         await updateDoc(recentActivitiesRef, {
           activities: [activityEntry, ...existing],
         });
-        console.log('✅ Logged recent activity to Firestore');
+        console.log(`✅ Logged recent activity to Firestore with threshold ${PROXIMITY_THRESHOLD} meters`);
       } else {
-        console.log('⚠️ Session already in recentActivities');
+        console.log('⚠️ Session already in recentActivities, skipping');
       }
 
-      // 2. Update only the current user's yourActivity
       const currentUserSnap = await getDoc(currentUserRef);
       const currentUserActivities = currentUserSnap.exists() ? currentUserSnap.data().yourActivity || [] : [];
-
       const currentUserHasSession = currentUserActivities.some((a) => a.sessionId === sessionId);
+
       if (!currentUserHasSession) {
         await updateDoc(currentUserRef, {
           yourActivity: arrayUnion(activityEntry),
         });
         console.log(`✅ Added activity to ${currentUserId}`);
       } else {
-        console.log(`⚠️ Session already exists for ${currentUserId}`);
+        console.log(`⚠️ Session already exists for ${currentUserId}, skipping`);
       }
     } catch (err) {
       console.error('🔥 Proximity log error:', err);
     }
-  }, [userAId, userBId, sessionId, userALocation, userBLocation, currentUserId]);
+  } else {
+    console.log(`⚠️ Users are beyond ${PROXIMITY_THRESHOLD} meters, no action taken`);
+  }
+  isCheckingRef.current = false;
+}, [userAId, userBId, sessionId, userALocation, userBLocation, currentUserId]);
 
-  useEffect(() => {
-    if (userALocation && userBLocation) {
-      checkProximityAndUpdate();
-    }
-  }, [checkProximityAndUpdate]);
+useEffect(() => {
+  if (userALocation?.latitude && userBLocation?.latitude && userALocation !== userBLocation) {
+    const timeoutId = setTimeout(() => checkProximityAndUpdate(), 500);
+    return () => clearTimeout(timeoutId);
+  }
+}, [checkProximityAndUpdate, userALocation, userBLocation]);
 
   useEffect(() => {
     if (!sessionIdRef.current || !userAId || !userBId || !currentUserId) {
@@ -212,9 +223,9 @@ export default function NicAssistScreen() {
                 setMessages(sortedMessages);
                 if (sortedMessages.length > 0 && sortedMessages[sortedMessages.length - 1].senderId !== currentUserId && !modalVisible) {
                   const newCount = unreadCount + 1;
-                  updateDoc(chatDocRef, { 
+                  updateDoc(chatDocRef, {
                     [`unreadCount.${currentUserId}`]: newCount,
-                    lastMessage: sortedMessages[sortedMessages.length - 1].text 
+                    lastMessage: sortedMessages[sortedMessages.length - 1].text
                   }, { merge: true });
                 }
               }, (error) => console.error('Message listen error for user:', currentUserId, error));
@@ -357,116 +368,205 @@ export default function NicAssistScreen() {
     updateDoc(doc(db, 'chats', chatId), { [`unreadCount.${currentUserId}`]: 0 }, { merge: true });
   };
 
-  return (
-    <View style={styles.container}>
-      {userAData && userBData && nicAssistLat && nicAssistLng && (
-        <View>
-          <View style={styles.card}>
-            <Text style={styles.title}>{isUserA ? 'NicQuest' : 'NicAssist'} Session</Text>
-            <View style={styles.usersContainer}>
-              <View style={styles.userCard}>
+ return (
+  <View style={styles.container}>
+    {userAData && userBData && nicAssistLat && nicAssistLng && (
+      <View>
+        <View style={styles.card}>
+          <Text style={styles.title}>{isUserA ? 'NicQuest' : 'NicAssist'} Session</Text>
+          <View style={styles.usersContainer}>
+            <View style={styles.userCard}>
+              {userAData.photoURL ? (
                 <Image source={{ uri: userAData.photoURL }} style={styles.userPhoto} />
-                <Text style={styles.roleLabel}>{isUserA ? 'You' : 'NicQuest'}</Text>
-                <Text style={styles.username}>{userAData.username}</Text>
-              </View>
-              <View style={styles.vsContainer}><Text style={styles.vsText}>→</Text></View>
-              <View style={styles.userCard}>
-                <Image source={{ uri: userBData.photoURL }} style={styles.userPhoto} />
-                <Text style={styles.roleLabel}>{isUserA ? 'NicAssist' : 'You'}</Text>
-                <Text style={styles.username}>{userBData.username}</Text>
-              </View>
+              ) : (
+                <View style={[styles.userPhoto, { backgroundColor: '#60a8b8' }]}>
+                  <Text style={styles.userPhotoText}>
+                    {userAData.username ? userAData.username[0].toUpperCase() : 'U'}
+                  </Text>
+                </View>
+              )}
+              <Text style={styles.roleLabel}>{isUserA ? 'You' : 'NicQuest'}</Text>
+              <Text style={styles.username}>{userAData.username || 'Unknown'}</Text>
             </View>
-            <TouchableOpacity style={styles.chatIcon} onPress={() => setModalVisible(true)}>
-              <View style={styles.iconContainer}>
-                <MaterialIcons name="chat" size={40} color="#60a8b8" />
-                {unreadCount > 0 && <MaterialIcons name="priority-high" size={20} color="white" style={styles.badge} />}
+            <View style={styles.vsContainer}><Text style={styles.vsText}>→</Text></View>
+            <View style={styles.userCard}>
+              {userBData.photoURL ? (
+                <Image source={{ uri: userBData.photoURL }} style={styles.userPhoto} />
+              ) : (
+                <View style={[styles.userPhoto, { backgroundColor: '#60a8b8' }]}>
+                  <Text style={styles.userPhotoText}>
+                    {userBData.username ? userBData.username[0].toUpperCase() : 'U'}
+                  </Text>
+                </View>
+              )}
+              <Text style={styles.roleLabel}>{isUserA ? 'NicAssist' : 'You'}</Text>
+              <Text style={styles.username}>{userBData.username || 'Unknown'}</Text>
+            </View>
+          </View>
+          <TouchableOpacity style={styles.chatIcon} onPress={() => setModalVisible(true)}>
+            <View style={styles.iconContainer}>
+              <MaterialIcons name="chat" size={40} color="#60a8b8" />
+              {unreadCount > 0 && <MaterialIcons name="priority-high" size={20} color="white" style={styles.badge} />}
+            </View>
+          </TouchableOpacity>
+          <View style={styles.detailsContainer}>
+            <Text style={styles.infoHeader}>{userBData.username || 'User'}’s Info</Text>
+            <View style={styles.data}>
+              <View>
+                <Text style={styles.detail}>Pouch Type: <Text style={styles.detailValue}>{userBData.pouchType || 'N/A'}</Text></Text>
+                <Text style={styles.detail}>Strength: <Text style={styles.detailValue}>{userBData.strength || 'N/A'}</Text></Text>
               </View>
-            </TouchableOpacity>
-            <View style={styles.detailsContainer}>
-              <Text style={styles.infoHeader}>{userBData.username}’s Info</Text>
-              <View style={styles.data}>
-                <View>
-                  <Text style={styles.detail}>Pouch Type: <Text style={styles.detailValue}>{userBData.pouchType}</Text></Text>
-                  <Text style={styles.detail}>Strength: <Text style={styles.detailValue}>{userBData.strength}</Text></Text>
-                </View>
-                <View>
-                  <Text style={styles.detail}>Flavors: <Text style={styles.detailValue}>{userBData.flavors}</Text></Text>
-                  <Text style={styles.detail}>Notes: <Text style={styles.detailValue}>{userBData.notes}</Text></Text>
-                </View>
+              <View>
+                <Text style={styles.detail}>Flavors: <Text style={styles.detailValue}>{userBData.flavors || 'N/A'}</Text></Text>
+                <Text style={styles.detail}>Notes: <Text style={styles.detailValue}>{userBData.notes || 'N/A'}</Text></Text>
               </View>
             </View>
           </View>
-          <MapView
-            style={styles.map}
-            initialRegion={{
-              latitude: (userALocation.latitude + userBLocation.latitude + nicAssistLat) / 3,
-              longitude: (userALocation.longitude + userBLocation.longitude + nicAssistLng) / 3,
-              latitudeDelta: 0.003,
-              longitudeDelta: 0.003,
-            }}
-          >
-            {userAData.photoURL && (
-              <Marker key="userA" coordinate={userALocation} title={`${userAData.username}'s Location`}>
+        </View>
+        <MapView
+          style={styles.map}
+          initialRegion={{
+            latitude: (userALocation.latitude + userBLocation.latitude + nicAssistLat) / 3,
+            longitude: (userALocation.longitude + userBLocation.longitude + nicAssistLng) / 3,
+            latitudeDelta: 0.003,
+            longitudeDelta: 0.003,
+          }}
+        >
+          {userALocation.latitude && userALocation.longitude && (
+            <Marker
+              key="userA"
+              coordinate={userALocation}
+              title={`${userAData?.username || 'User A'}'s Location`}
+            >
+              {userAData?.photoURL ? (
                 <Image
                   source={{ uri: userAData.photoURL }}
                   style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: 'white' }}
                 />
-              </Marker>
-            )}
-            {userBData.photoURL && (
-              <Marker key="userB" coordinate={userBLocation} title={`${userBData.username}'s Location`}>
+              ) : (
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: '#60a8b8',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderWidth: 2,
+                    borderColor: 'white',
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: 'white',
+                      fontWeight: 'bold',
+                      fontSize: 18,
+                    }}
+                  >
+                    {userAData?.username ? userAData.username[0].toUpperCase() : 'U'}
+                  </Text>
+                </View>
+              )}
+            </Marker>
+          )}
+          {userBLocation.latitude && userBLocation.longitude && (
+            <Marker
+              key="userB"
+              coordinate={userBLocation}
+              title={`${userBData?.username || 'User B'}'s Location`}
+            >
+              {userBData?.photoURL ? (
                 <Image
                   source={{ uri: userBData.photoURL }}
                   style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: 'white' }}
                 />
-              </Marker>
-            )}
-            <Marker key="nicAssist" coordinate={{ latitude: nicAssistLat, longitude: nicAssistLng }} title="NicAssist Location" pinColor="#60a8b8" />
-          </MapView>
-        </View>
-      )}
-      <TouchableOpacity style={styles.bottomButton} onPress={handleCancel}>
-        <Text style={styles.buttonText}>{isUserA ? 'Cancel NicQuest' : 'Cancel NicAssist'}</Text>
-      </TouchableOpacity>
-      <CancelAlert visible={showAlert} onOk={handleAlertOk} userId={currentUserId} />
-      <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={closeModal}>
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView behavior="padding" style={styles.modalContentContainer}>
-            <View style={styles.modalContent}>
-              <TouchableOpacity style={styles.closeButton} onPress={closeModal}><Text style={styles.closeButtonText}>Close</Text></TouchableOpacity>
-              <View style={styles.divider} />
-              <FlatList
-                ref={flatListRef}
-                data={messages}
-                keyExtractor={item => item.id}
-                renderItem={({ item }) => (
-                  <View style={item.senderId === currentUserId ? styles.sentMessage : styles.receivedMessage}>
-                    <Text style={styles.messageText}>{item.text}</Text>
-                    <Text style={styles.messageTime}>
-                      {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                  </View>
-                )}
-                contentContainerStyle={{ paddingBottom: 20 }}
-                onContentSizeChange={() => {
+              ) : (
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: '#60a8b8',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderWidth: 2,
+                    borderColor: 'white',
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: 'white',
+                      fontWeight: 'bold',
+                      fontSize: 18,
+                    }}
+                  >
+                    {userBData?.username ? userBData.username[0].toUpperCase() : 'U'}
+                  </Text>
+                </View>
+              )}
+            </Marker>
+          )}
+          <Marker
+            key="nicAssist"
+            coordinate={{ latitude: nicAssistLat, longitude: nicAssistLng }}
+            title="NicAssist Location"
+            pinColor="#60a8b8"
+          />
+        </MapView>
+      </View>
+    )}
+    <TouchableOpacity style={styles.bottomButton} onPress={handleCancel}>
+      <Text style={styles.buttonText}>{isUserA ? 'Cancel NicQuest' : 'Cancel NicAssist'}</Text>
+    </TouchableOpacity>
+    <CancelAlert visible={showAlert} onOk={handleAlertOk} userId={currentUserId} />
+    <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={closeModal}>
+      <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalContentContainer}>
+          <View style={styles.modalContent}>
+            <TouchableOpacity style={styles.closeButton} onPress={closeModal}>
+              <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
+            <View style={styles.divider} />
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              keyExtractor={item => item.id}
+              renderItem={({ item }) => (
+                <View style={item.senderId === currentUserId ? styles.sentMessage : styles.receivedMessage}>
+                  <Text style={styles.messageText}>{item.text}</Text>
+                  <Text style={styles.messageTime}>
+                    {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                </View>
+              )}
+              contentContainerStyle={{ paddingBottom: 20 }}
+              onContentSizeChange={() => {
+                flatListRef.current?.scrollToEnd({ animated: false });
+              }}
+              onLayout={() => {
+                setTimeout(() => {
                   flatListRef.current?.scrollToEnd({ animated: false });
-                }}
-                onLayout={() => {
-                  setTimeout(() => {
-                    flatListRef.current?.scrollToEnd({ animated: false });
-                  }, 100);
-                }}
+                }, 100);
+              }}
+            />
+            <View style={[styles.inputContainer, { marginBottom: keyboardVisible ? 0 : 20 }]}>
+              <TextInput
+                style={styles.messageInput}
+                value={newMessage}
+                onChangeText={setNewMessage}
+                placeholder="Type a message..."
+                placeholderTextColor="#888"
               />
-              <View style={[styles.inputContainer, { marginBottom: keyboardVisible ? 0 : 20 }]}>
-                <TextInput style={styles.messageInput} value={newMessage} onChangeText={setNewMessage} placeholder="Type a message..." placeholderTextColor="#888" />
-                <TouchableOpacity style={styles.sendButton} onPress={sendMessage}><Text style={styles.sendButtonText}>Send</Text></TouchableOpacity>
-              </View>
+              <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
+                <Text style={styles.sendButtonText}>Send</Text>
+              </TouchableOpacity>
             </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
-    </View>
-  );
+          </View>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
+  </View>
+);
 }
 
 const styles = StyleSheet.create({
@@ -475,7 +575,8 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 20, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, elevation: 3, marginBottom: 10 },
   usersContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   userCard: { alignItems: 'center', justifyContent: 'center', width: '40%' },
-  userPhoto: { width: 80, height: 80, borderRadius: 40, marginBottom: 6, backgroundColor: '#e0e0e0' },
+  userPhoto: { width: 80, height: 80, borderRadius: 40, marginBottom: 6, backgroundColor: '#e0e0e0', justifyContent: 'center', alignItems: 'center' },
+  userPhotoText: { color: 'white', fontWeight: 'bold', fontSize: 24 },
   username: { fontSize: 14, fontWeight: 'bold', color: '#222' },
   roleLabel: { fontSize: 12, color: '#888', marginBottom: 2 },
   vsContainer: { width: '20%', alignItems: 'center' },

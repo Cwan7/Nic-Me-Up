@@ -26,10 +26,10 @@ export const sendNicQuestNotification = async (userName, currentUserId, otherUse
         sound: 'default',
         title: `${userName} needs a pouch!`,
         body: `Check ${assist.NicAssistAddress} for assistance.`,
-        data: { 
-          type: 'NicQuest', 
-          userId: currentUserId, 
-          displayName: userName, 
+        data: {
+          type: 'NicQuest',
+          userId: currentUserId,
+          displayName: userName,
           profilePhoto: auth.currentUser?.photoURL || null,
           nicAssistLat: assist.NicAssistLat,
           nicAssistLng: assist.NicAssistLng,
@@ -76,10 +76,10 @@ export const sendLocationBasedNotification = async (userName, currentUserId, oth
         sound: 'default',
         title: `${userName} needs a pouch!`,
         body: `You’re nearby—offer assistance!`,
-        data: { 
-          type: 'NicQuest', 
-          userId: currentUserId, 
-          displayName: userName, 
+        data: {
+          type: 'NicQuest',
+          userId: new Date(),
+          displayName: userName,
           profilePhoto: auth.currentUser?.photoURL || null,
           nicAssistLat: location.latitude,
           nicAssistLng: location.longitude,
@@ -122,6 +122,7 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
 
 export default function HomeScreen({ route }) {
   const [nicAssists, setNicAssists] = useState([]);
+  const [recentLocations, setRecentLocations] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
   const [questDistance, setQuestDistance] = useState(250);
   const [region, setRegion] = useState(null);
@@ -135,17 +136,24 @@ export default function HomeScreen({ route }) {
 
   const mapRef = useRef(null);
   const unsubscribeLocation = useRef(null);
+  const unsubscribeActivities = useRef(null);
   const isFocused = useIsFocused();
   const { user } = route.params || { user: { displayName: 'Friend', uid: null } };
   const userName = user.displayName || 'Friend';
   const navigation = useNavigation();
+  const isListenerActive = useRef(false);
 
   useEffect(() => {
     const loadUserData = async () => {
       const currentUser = auth.currentUser;
-      if (!currentUser) {
-        console.log('No authenticated user, delaying load');
+      if (!currentUser || !isFocused) {
+        console.log('No authenticated user or not focused, delaying load');
         return;
+      }
+
+      if (unsubscribeLocation.current && isListenerActive.current) {
+        unsubscribeLocation.current();
+        console.log('🧹 Unsubscribed existing location listener');
       }
 
       try {
@@ -156,7 +164,7 @@ export default function HomeScreen({ route }) {
         if (userData?.location) {
           setUserLocation(userData.location);
           setQuestDistance(userData.nicQuestDistance || 250);
-          user.photoURL = userData.photoURL || user.photoURL; 
+          user.photoURL = userData.photoURL || user.photoURL;
 
           const { latitude, longitude } = userData.location;
           setRegion({
@@ -174,9 +182,14 @@ export default function HomeScreen({ route }) {
 
         const querySnapshot = await getDocs(collection(db, 'users'));
         const assists = [];
+        const locations = [];
+        const now = Date.now();
+
         querySnapshot.forEach(docSnap => {
+          if (docSnap.id === currentUser.uid) return;
+
           const data = docSnap.data();
-          if (docSnap.id !== currentUser.uid && data.NicAssists) {
+          if (data.NicAssists) {
             data.NicAssists.forEach(assist => {
               if (assist.Active) {
                 assists.push({
@@ -188,76 +201,110 @@ export default function HomeScreen({ route }) {
               }
             });
           }
+          if (
+            data.location?.latitude &&
+            data.location?.longitude &&
+            data.location?.timestamp &&
+            now - data.location.timestamp <= 5 * 60 * 1000
+          ) {
+            locations.push({
+              userId: docSnap.id,
+              latitude: data.location.latitude,
+              longitude: data.location.longitude,
+              username: data.username || 'Unknown',
+            });
+          }
         });
         setNicAssists(assists);
-
-        const activityDocRef = doc(db, 'recentActivities', 'allActivities');
-        const activityDoc = await getDoc(activityDocRef);
-        const activities = activityDoc.exists() ? activityDoc.data().activities || [] : [];
-        setRecentActivities(activities);
+        setRecentLocations(locations);
+        console.log('Recent locations:', locations);
 
         const userIds = new Set();
-        activities.forEach(act => {
-          if (act.userAId) userIds.add(act.userAId);
-          if (act.userBId) userIds.add(act.userBId);
-        });
+        if (unsubscribeActivities.current) {
+          unsubscribeActivities.current();
+          console.log('🧹 Unsubscribed existing activities listener');
+        }
 
-        const userInfo = {};
-        await Promise.all(
-          Array.from(userIds).map(async (uid) => {
-            try {
-              const docRef = doc(db, 'users', uid);
-              const docSnap = await getDoc(docRef);
-              if (docSnap.exists()) {
-                const data = docSnap.data();
-                userInfo[uid] = {
-                  displayName: data.username || 'Unknown',
-                };
+        const activityDocRef = doc(db, 'recentActivities', 'allActivities');
+        unsubscribeActivities.current = onSnapshot(activityDocRef, (activityDoc) => {
+          const activities = activityDoc.exists() ? activityDoc.data().activities || [] : [];
+          setRecentActivities(activities.sort((a, b) => b.timestamp - a.timestamp).slice(0, 5));
+          
+          activities.forEach(act => {
+            if (act.userAId) userIds.add(act.userAId);
+            if (act.userBId) userIds.add(act.userBId);
+          });
+
+          Promise.all(
+            Array.from(userIds).map(async (uid) => {
+              try {
+                const docRef = doc(db, 'users', uid);
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                  const data = docSnap.data();
+                  setUserInfoMap(prev => ({
+                    ...prev,
+                    [uid]: { displayName: data.username || 'Unknown' },
+                  }));
+                }
+              } catch (err) {
+                console.warn(`⚠️ Failed to fetch user info for ${uid}:`, err);
               }
-            } catch (err) {
-              console.warn(`⚠️ Failed to fetch user info for ${uid}:`, err);
-            }
-          })
-        );
-        setUserInfoMap(userInfo);
-
-        unsubscribeLocation.current = onSnapshot(userDocRef, (docSnapshot) => {
-          const data = docSnapshot.data();
-          if (docSnapshot.exists() && data?.location) {
-            const newLocation = data.location;
-            setUserLocation(newLocation);
-
-            if (mapRef.current) {
-              mapRef.current.animateToRegion({
-                latitude: newLocation.latitude,
-                longitude: newLocation.longitude,
-                ...regionRef.current,
-              }, 1000);
-            }
-
-            if (!region) {
-              setRegion({
-                latitude: newLocation.latitude,
-                longitude: newLocation.longitude,
-                ...regionRef.current,
-              });
-            }
-          }
+            })
+          );
         }, (error) => {
-          console.error('🔥 Firestore location listener error:', error);
+          console.error('🔥 Firestore activities listener error:', error);
         });
+
+        if (!isListenerActive.current) {
+          unsubscribeLocation.current = onSnapshot(userDocRef, (docSnapshot) => {
+            const data = docSnapshot.data();
+            if (docSnapshot.exists() && data?.location) {
+              const newLocation = data.location;
+              setUserLocation(newLocation);
+              console.log(`📍 Updated: ${newLocation.latitude}, ${newLocation.longitude}`);
+
+              if (mapRef.current) {
+                mapRef.current.animateToRegion({
+                  latitude: newLocation.latitude,
+                  longitude: newLocation.longitude,
+                  ...regionRef.current,
+                }, 1000);
+              }
+
+              if (!region) {
+                setRegion({
+                  latitude: newLocation.latitude,
+                  longitude: newLocation.longitude,
+                  ...regionRef.current,
+                });
+              }
+            }
+          }, (error) => {
+            console.error('🔥 Firestore location listener error:', error);
+          });
+          isListenerActive.current = true;
+          console.log('✅ Started live location tracking');
+        }
       } catch (err) {
         console.error('🛑 Error loading user data:', err);
       }
     };
 
-    const unsubscribe = auth.onAuthStateChanged(user => {
-      if (user) loadUserData();
-    });
+    if (isFocused && auth.currentUser) {
+      loadUserData();
+    }
 
     return () => {
-      if (unsubscribeLocation.current) unsubscribeLocation.current();
-      unsubscribe();
+      if (unsubscribeLocation.current && isListenerActive.current) {
+        unsubscribeLocation.current();
+        console.log('🧹 Cleaned up live location tracking on unmount');
+        isListenerActive.current = false;
+      }
+      if (unsubscribeActivities.current) {
+        unsubscribeActivities.current();
+        console.log('🧹 Cleaned up activities tracking on unmount');
+      }
     };
   }, [isFocused]);
 
@@ -267,7 +314,7 @@ export default function HomeScreen({ route }) {
     if (!currentUser || !userLocation) return;
 
     try {
-      const sessionId = Date.now().toString(); 
+      const sessionId = Date.now().toString();
       const userADocRef = doc(db, 'users', currentUser.uid);
       await updateDoc(userADocRef, { sessionId }, { merge: true });
       console.log('Session initialized with sessionId:', sessionId);
@@ -398,7 +445,17 @@ export default function HomeScreen({ route }) {
                 pinColor="#FF6347"
               />
             ))}
-
+            {recentLocations.map((location, index) => (
+              <Marker
+                key={`location-${index}`}
+                coordinate={{
+                  latitude: location.latitude,
+                  longitude: location.longitude,
+                }}
+                title={`${location.username}'s Current Location`}
+                pinColor="#FF6347"
+              />
+            ))}
             {userLocation && (
               <>
                 <Circle
@@ -411,7 +468,6 @@ export default function HomeScreen({ route }) {
                   strokeColor="rgba(0, 0, 255, 0.5)"
                   strokeWidth={1}
                 />
-
                 <Marker
                   key="currentUser"
                   coordinate={{
@@ -436,7 +492,7 @@ export default function HomeScreen({ route }) {
                         width: 40,
                         height: 40,
                         borderRadius: 20,
-                        backgroundColor: '#4682B4',
+                        backgroundColor: '#60a8b8',
                         justifyContent: 'center',
                         alignItems: 'center',
                         borderWidth: 2,
@@ -465,7 +521,6 @@ export default function HomeScreen({ route }) {
         <View style={styles.activitySection}>
           <Text style={styles.activityTitle}>Recent Activity</Text>
           <View style={styles.divider} />
-          
           {recentActivities.length > 0 ? (
             recentActivities.map((activity, index) => {
               const userA = userInfoMap[activity.userAId] || { displayName: 'Unknown' };
@@ -475,14 +530,14 @@ export default function HomeScreen({ route }) {
                 <View key={index} style={styles.activityCard}>
                   <View style={styles.usersContainer}>
                     <View style={styles.userCard}>
-                      <Text style={styles.username}>{userA.displayName}</Text>
+                      <Text style={styles.usernameActivity}>{userA.displayName}</Text>
                       <Text style={styles.roleLabel}>NicQuest</Text>
                     </View>
                     <View style={styles.vsContainer}>
                       <Text style={styles.vsText}>→</Text>
                     </View>
                     <View style={styles.userCard}>
-                      <Text style={styles.username}>{userB.displayName}</Text>
+                      <Text style={styles.usernameActivity}>{userB.displayName}</Text>
                       <Text style={styles.roleLabel}>NicAssist</Text>
                     </View>
                   </View>
@@ -505,9 +560,18 @@ const styles = StyleSheet.create({
   welcomeText: { fontSize: 20, color: '#000', textAlign: 'center', marginBottom: 10, fontWeight: 'bold' },
   subText: { fontSize: 16, color: '#555', textAlign: 'center', marginBottom: 20 },
   nicQuestButton: {
-    marginVertical: 10, borderRadius: 10, paddingVertical: 15, paddingHorizontal: 30,
-    alignItems: 'center', backgroundColor: '#60a8b8', borderBottomWidth: 4, borderBottomColor: '#4d8a9b',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4,
+    marginVertical: 10,
+    borderRadius: 10,
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    alignItems: 'center',
+    backgroundColor: '#60a8b8',
+    borderBottomWidth: 4,
+    borderBottomColor: '#4d8a9b',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
   text: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   map: { width: Dimensions.get('window').width - 40, height: 300, marginVertical: 20 },
@@ -515,11 +579,21 @@ const styles = StyleSheet.create({
   activityTitle: { fontSize: 18, color: '#000', fontWeight: '300', marginBottom: 10 },
   divider: { width: '90%', height: 2, backgroundColor: '#b7b7b7', marginBottom: 10 },
   activityPlaceholder: { height: 50, width: '90%', backgroundColor: '#f0f0f0' },
-  username: { fontWeight: 'bold', color: '#000' },
-  activityCard: { backgroundColor: '#fff', borderRadius: 10, padding: 7, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, marginBottom: 15, width: '100%', },
-  usersContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', },
-  userCard: { alignItems: 'center', justifyContent: 'center', width: '40%', },
-  roleLabel: { fontSize: 12, color: '#888', marginBottom: 2, },
-  vsContainer: { width: '20%', alignItems: 'center', },
-  vsText: { fontSize: 35, color: '#60a8b8', },
+  username: { fontWeight: 'bold', color: '#60a8b8' },
+  usernameActivity: { fontWeight: 'bold', color: '#000' },
+  activityCard: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 7,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    marginBottom: 15,
+    width: '100%',
+  },
+  usersContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  userCard: { alignItems: 'center', justifyContent: 'center', width: '40%' },
+  roleLabel: { fontSize: 12, color: '#888', marginBottom: 2 },
+  vsContainer: { width: '20%', alignItems: 'center' },
+  vsText: { fontSize: 35, color: '#60a8b8' },
 });
