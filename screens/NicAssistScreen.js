@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Alert, Dimensions, Modal, FlatList, TextInput, KeyboardAvoidingView, Keyboard } from 'react-native';
 import { db, auth } from '../firebase';
-import { doc, getDoc, updateDoc, onSnapshot, collection, addDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, onSnapshot, collection, addDoc, setDoc, arrayUnion, query, where, getDocs } from 'firebase/firestore';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import MapView, { Marker } from 'react-native-maps';
 import { MaterialIcons } from '@expo/vector-icons';
-import Geolocation from '@react-native-community/geolocation';
+import { getDistance } from 'geolib';
 
 const CancelAlert = ({ visible, onOk, userId }) => {
   const [isVisible, setIsVisible] = useState(visible);
@@ -48,22 +48,75 @@ export default function NicAssistScreen() {
   const currentUserId = auth.currentUser?.uid;
   const [userALocation, setUserALocation] = useState({ latitude: initialNicAssistLat, longitude: initialNicAssistLng });
   const [userBLocation, setUserBLocation] = useState({ latitude: initialNicAssistLat, longitude: initialNicAssistLng });
-  let locationWatchId = null;
-  const lastLoggedPosition = useRef(null);
+  const hasLoggedActivityRef = useRef(false);
+  const isCheckingRef = useRef(false);   
 
-  const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371e3; // Earth radius in meters
-    const φ1 = (lat1 * Math.PI) / 180;
-    const φ2 = (lat2 * Math.PI) / 180;
-    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+  const checkProximityAndUpdate = useCallback(async () => {
+    if (
+      !userAId ||
+      !userBId ||
+      !sessionId ||
+      !userALocation ||
+      !userBLocation ||
+      hasLoggedActivityRef.current
+    ) {
+      return;
+    }
 
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in meters
-  };
+    const distance = getDistance(userALocation, userBLocation);
+    if (distance >= 4) return;
+
+    console.log('📏 Users are within 4 meters!');
+    hasLoggedActivityRef.current = true;
+
+    const activityEntry = {
+      userAId,
+      userBId,
+      sessionId,
+      timestamp: Date.now(),
+    };
+
+    const recentActivitiesRef = doc(db, 'recentActivities', 'allActivities');
+    const currentUserRef = doc(db, 'users', currentUserId);
+
+    try {
+      // 1. Log to recentActivities (if not already there)
+      const recentSnap = await getDoc(recentActivitiesRef);
+      const existing = recentSnap.exists() ? recentSnap.data().activities || [] : [];
+
+      const recentHasSession = existing.some((a) => a.sessionId === sessionId);
+      if (!recentHasSession) {
+        await updateDoc(recentActivitiesRef, {
+          activities: [activityEntry, ...existing],
+        });
+        console.log('✅ Logged recent activity to Firestore');
+      } else {
+        console.log('⚠️ Session already in recentActivities');
+      }
+
+      // 2. Update only the current user's yourActivity
+      const currentUserSnap = await getDoc(currentUserRef);
+      const currentUserActivities = currentUserSnap.exists() ? currentUserSnap.data().yourActivity || [] : [];
+
+      const currentUserHasSession = currentUserActivities.some((a) => a.sessionId === sessionId);
+      if (!currentUserHasSession) {
+        await updateDoc(currentUserRef, {
+          yourActivity: arrayUnion(activityEntry),
+        });
+        console.log(`✅ Added activity to ${currentUserId}`);
+      } else {
+        console.log(`⚠️ Session already exists for ${currentUserId}`);
+      }
+    } catch (err) {
+      console.error('🔥 Proximity log error:', err);
+    }
+  }, [userAId, userBId, sessionId, userALocation, userBLocation, currentUserId]);
+
+  useEffect(() => {
+    if (userALocation && userBLocation) {
+      checkProximityAndUpdate();
+    }
+  }, [checkProximityAndUpdate]);
 
   useEffect(() => {
     if (!sessionIdRef.current || !userAId || !userBId || !currentUserId) {
@@ -192,7 +245,6 @@ export default function NicAssistScreen() {
             const data = docSnapshot.data();
             if (data.location) {
               setUserALocation(data.location);
-              checkProximity();
             }
           }
         }, (error) => console.error('Location A listener error:', error));
@@ -202,7 +254,6 @@ export default function NicAssistScreen() {
             const data = docSnapshot.data();
             if (data.location) {
               setUserBLocation(data.location);
-              checkProximity();
             }
           }
         }, (error) => console.error('Location B listener error:', error));
@@ -214,76 +265,25 @@ export default function NicAssistScreen() {
 
     init();
 
-    const startLocationTracking = () => {
-      if (locationWatchId) Geolocation.clearWatch(locationWatchId);
-      locationWatchId = Geolocation.watchPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          const currentPosition = `${latitude},${longitude}`;
-          if (lastLoggedPosition.current !== currentPosition) {
-            const userDocRef = doc(db, 'users', currentUserId);
-            updateDoc(userDocRef, { location: { latitude, longitude }, lastUpdated: Date.now() }, { merge: true })
-              .then(() => lastLoggedPosition.current = currentPosition)
-              .catch((error) => console.error('Location update error:', error));
-            checkProximity();
-          }
-        },
-        (error) => console.error('Geolocation error:', error),
-        { enableHighAccuracy: true, distanceFilter: 2, interval: 2000 }
-      );
-    };
-
-    startLocationTracking();
-
-    const checkProximity = async () => {
-      const distance = calculateDistance(userALocation.latitude, userALocation.longitude, userBLocation.latitude, userBLocation.longitude);
-      if (distance <= 3 && userAData && userBData && sessionIdRef.current) {
-        const activityId = `${userAId}_${userBId}_${Date.now()}`;
-        const activityData = {
-          userAId,
-          userBId,
-          timestamp: Date.now(),
-          sessionId: sessionIdRef.current,
-          distance: distance.toFixed(2),
-        };
-
-        // Store in per-user documents
-        await updateDoc(doc(db, 'users', userAId), {
-          recentActivity: FieldValue.arrayUnion({ ...activityData, type: isUserA ? 'NicQuest' : 'NicAssist' }),
-        }, { merge: true });
-        await updateDoc(doc(db, 'users', userBId), {
-          recentActivity: FieldValue.arrayUnion({ ...activityData, type: isUserA ? 'NicAssist' : 'NicQuest' }),
-        }, { merge: true });
-
-        // Store in recentActivities collection
-        const activityRef = doc(db, 'recentActivities', activityId);
-        await setDoc(activityRef, activityData, { merge: true })
-          .then(() => console.log('Recent activity logged:', userAId, userBId))
-          .catch((error) => console.error('Error logging recent activity:', error));
-      }
-    };
-
     return () => {
       if (unsubscribeSession.current) unsubscribeSession.current();
       if (unsubscribeMessages.current) unsubscribeMessages.current();
       if (unsubscribeChat.current) unsubscribeChat.current();
       if (unsubscribeLocationA.current) unsubscribeLocationA.current();
       if (unsubscribeLocationB.current) unsubscribeLocationB.current();
-      if (locationWatchId) Geolocation.clearWatch(locationWatchId);
       hasNavigatedRef.current = false;
       setShowAlert(false);
     };
   }, [userAId, userBId, sessionId, initialNicAssistLat, initialNicAssistLng]);
 
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
       return () => {
         if (unsubscribeSession.current) unsubscribeSession.current();
         if (unsubscribeMessages.current) unsubscribeMessages.current();
         if (unsubscribeChat.current) unsubscribeChat.current();
         if (unsubscribeLocationA.current) unsubscribeLocationA.current();
         if (unsubscribeLocationB.current) unsubscribeLocationB.current();
-        if (locationWatchId) Geolocation.clearWatch(locationWatchId);
         hasNavigatedRef.current = false;
         setShowAlert(false);
       };

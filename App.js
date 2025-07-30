@@ -99,7 +99,7 @@ export default function App() {
       if (granted) {
         const initialLoc = Device.isDevice
           ? await Location.getCurrentPositionAsync({})
-          : { coords: { latitude: 39.7405, longitude: -104.9706, timestamp: new Date().toISOString() } };
+          : { coords: { latitude: 39.74053735571909, longitude: -104.97067047309832, timestamp: new Date().toISOString() } };
 
         await setDoc(userDocRef, {
           location: {
@@ -135,7 +135,7 @@ export default function App() {
         {
           accuracy: Location.Accuracy.Highest,
           timeInterval: 2000,
-          distanceInterval: 5,
+          distanceInterval: 2,
         },
         async (position) => {
           const { latitude, longitude } = position.coords;
