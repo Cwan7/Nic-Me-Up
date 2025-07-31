@@ -228,54 +228,54 @@ export default function App() {
     };
   }, []);
 
-  const handleModalAction = async (action) => {
-    console.log('handleModalAction called with action:', action);
-    if (action === 'NicAssist' && !hasNavigated.current) {
-      const userADocRef = doc(db, 'users', notification.userId);
-      const userADoc = await getDoc(userADocRef);
-      const userAData = userADoc.data();
-      console.log('UserA data:', userAData);
+ const handleModalAction = async (action) => {
+  console.log('handleModalAction called with action:', action);
+  if (action === 'NicAssist' && !hasNavigated.current) {
+    const userADocRef = doc(db, 'users', notification.userId);
+    const userADoc = await getDoc(userADocRef);
+    const userAData = userADoc.data();
+    console.log('UserA data:', userAData);
 
-      if (userAData?.nicQuestAssistedBy) {
-        Alert.alert('NicQuest Already Assisted!', 'This NicQuest has already been assisted by another user.');
-      } else {
-        try {
-          const sessionId = userAData?.sessionId;
-          if (!sessionId) {
-            console.error('❌ Could not retrieve sessionId from userA');
-            return;
-          }
-
-          const nicAssistLat = notification.nicAssistLat;
-          const nicAssistLng = notification.nicAssistLng;
-          if (!nicAssistLat || !nicAssistLng) {
-            console.error('❌ Could not retrieve nicAssistLat or nicAssistLng from notification');
-            return;
-          }
-
-          const userBDocRef = doc(db, 'users', auth.currentUser.uid);
-          await setDoc(userBDocRef, { nicAssistResponse: notification.userId }, { merge: true });
-          await updateDoc(userADocRef, { nicQuestAssistedBy: auth.currentUser.uid }, { merge: true });
-          console.log(`✅ NicAssist selected for user ${notification?.userId}`);
-          hasNavigated.current = true;
-          navigationRef.current?.navigate('NicAssist', {
-            userAId: notification.userId,
-            userBId: auth.currentUser.uid,
-            sessionId,
-            nicAssistLat,
-            nicAssistLng,
-          });
-        } catch (error) {
-          console.error('Error updating Firestore for NicAssist:', error);
+    if (userAData?.nicQuestAssistedBy) {
+      Alert.alert('NicQuest Already Assisted!', 'This NicQuest has already been assisted by another user.');
+    } else {
+      try {
+        const sessionId = userAData?.sessionId;
+        if (!sessionId) {
+          console.error('❌ Could not retrieve sessionId from userA');
+          return;
         }
-      }
-    } else if (action === 'Decline') {
-      console.log(`❌ Decline NicQuest for user ${notification?.userId}`);
-    }
-    setIsModalVisible(false);
-    if (action === 'NicAssist') hasNavigated.current = false;
-  };
 
+        const nicAssistLat = notification.nicAssistLat;
+        const nicAssistLng = notification.nicAssistLng;
+        if (!nicAssistLat || !nicAssistLng) {
+          console.error('❌ Could not retrieve nicAssistLat or nicAssistLng from notification');
+          return;
+        }
+
+        const userBDocRef = doc(db, 'users', auth.currentUser.uid);
+        await setDoc(userBDocRef, { nicAssistResponse: notification.userId }, { merge: true });
+        await updateDoc(userADocRef, { nicQuestAssistedBy: auth.currentUser.uid }, { merge: true });
+        console.log(`✅ NicAssist selected for user ${notification?.userId}`);
+        hasNavigated.current = true;
+        navigationRef.current?.navigate('NicAssist', {
+          userAId: notification.userId,
+          userBId: auth.currentUser.uid,
+          sessionId,
+          nicAssistLat,
+          nicAssistLng,
+          isGroup2: notification.isGroup2 || false, // Pass isGroup2 from notification
+        });
+      } catch (error) {
+        console.error('Error updating Firestore for NicAssist:', error);
+      }
+    }
+  } else if (action === 'Decline') {
+    console.log(`❌ Decline NicQuest for user ${notification?.userId}`);
+  }
+  setIsModalVisible(false);
+  if (action === 'NicAssist') hasNavigated.current = false;
+};
   return (
     <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
