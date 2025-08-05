@@ -20,8 +20,9 @@ const CancelAlert = ({ visible, onOk, userId }) => {
     [{ text: 'OK', onPress: () => { setIsVisible(false); onOk(); }, style: 'default' }]
   );
 };
+
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6371e3; // Earth's radius in meters
+  const R = 6371e3;
   const φ1 = (lat1 * Math.PI) / 180;
   const φ2 = (lat2 * Math.PI) / 180;
   const Δφ = ((lat2 - lat1) * Math.PI) / 180;
@@ -31,8 +32,16 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
             Math.cos(φ1) * Math.cos(φ2) *
             Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // Distance in meters
+  return R * c;
 };
+
+const isValidLocation = (loc) =>
+  loc &&
+  typeof loc.latitude === 'number' &&
+  typeof loc.longitude === 'number' &&
+  !isNaN(loc.latitude) &&
+  !isNaN(loc.longitude);
+
 export default function NicAssistScreen() {
   const route = useRoute();
   const { userAId, userBId, sessionId, nicAssistLat: initialNicAssistLat, nicAssistLng: initialNicAssistLng, isGroup2 } = route.params || {};
@@ -55,12 +64,13 @@ export default function NicAssistScreen() {
   const flatListRef = useRef(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const currentUserId = auth.currentUser?.uid;
-  const [userALocation, setUserALocation] = useState({ latitude: initialNicAssistLat, longitude: initialNicAssistLng });
-  const [userBLocation, setUserBLocation] = useState({ latitude: initialNicAssistLat, longitude: initialNicAssistLng });
+  const [userALocation, setUserALocation] = useState(null); // Changed to null
+  const [userBLocation, setUserBLocation] = useState(null); // Changed to null
   const hasLoggedActivityRef = useRef(false);
   const isCheckingRef = useRef(false);
-  const [nicAssistLat, setNicAssistLat] = useState(initialNicAssistLat); // State for dynamic management
-  const [nicAssistLng, setNicAssistLng] = useState(initialNicAssistLng); // State for dynamic management
+  const [nicAssistLat, setNicAssistLat] = useState(initialNicAssistLat);
+  const [nicAssistLng, setNicAssistLng] = useState(initialNicAssistLng);
+  const lastActiveIntervalRef = useRef(null);
 
   // Calculate questDistance from UserA data
   const userADocRef = doc(db, 'users', userAId);
@@ -74,7 +84,7 @@ export default function NicAssistScreen() {
     };
     fetchUserAData();
   }, [userAId]);
-  const questDistance = (userAData?.nicQuestDistance || 250) * 0.3048; // Convert feet to meters
+  const questDistance = (userAData?.nicQuestDistance || 250) * 0.3048;
 
   // Update nicAssistLat and nicAssistLng based on group
   useEffect(() => {
@@ -82,39 +92,58 @@ export default function NicAssistScreen() {
       setNicAssistLat(userBLocation.latitude);
       setNicAssistLng(userBLocation.longitude);
     } else if (!isGroup2 && userBData?.NicAssists?.length > 0) {
-      const activeAssist = userBData.NicAssists.find(assist => assist.Active && calculateDistance(userALocation.latitude, userALocation.longitude, assist.NicAssistLat, assist.NicAssistLng) <= questDistance);
+      const activeAssist = userBData.NicAssists.find(assist => assist.Active && calculateDistance(userALocation?.latitude || initialNicAssistLat, userALocation?.longitude || initialNicAssistLng, assist.NicAssistLat, assist.NicAssistLng) <= questDistance);
       if (activeAssist) {
         setNicAssistLat(activeAssist.NicAssistLat);
         setNicAssistLng(activeAssist.NicAssistLng);
       }
     }
-  }, [isGroup2, userBLocation, userBData, userALocation, questDistance]);
+  }, [isGroup2, userBLocation, userBData, userALocation, questDistance, initialNicAssistLat, initialNicAssistLng]);
 
   const PROXIMITY_THRESHOLD = 3;
 
   const checkProximityAndUpdate = useCallback(async () => {
+    console.log("🛠️ userALocation before proximity check:", userALocation);
+    console.log("🛠️ userBLocation before proximity check:", userBLocation);
     if (
       !userAId ||
       !userBId ||
       !sessionId ||
-      !userALocation?.latitude ||
-      !userALocation?.longitude ||
-      !userBLocation?.latitude ||
-      !userBLocation?.longitude ||
+      !isValidLocation(userALocation) ||
+      !isValidLocation(userBLocation) ||
       hasLoggedActivityRef.current ||
       isCheckingRef.current ||
       userAId === userBId
     ) {
+      console.log("⛔ Proximity check skipped:", {
+        userAId, userBId, sessionId, userALocation, userBLocation,
+        hasLoggedActivityRef: hasLoggedActivityRef.current,
+        isCheckingRef: isCheckingRef.current,
+        userAIdEqualsUserBId: userAId === userBId
+      });
       return;
     }
 
     isCheckingRef.current = true;
+    const latA = userALocation.latitude;
+    const lngA = userALocation.longitude;
+    const latB = userBLocation.latitude;
+    const lngB = userBLocation.longitude;
+
+    // Check if locations are identical
+    if (latA === latB && lngA === lngB) {
+      console.log("❌ Skipping proximity logging — locations are identical");
+      isCheckingRef.current = false;
+      return;
+    }
+
     const distance = getDistance(
-      { latitude: parseFloat(userALocation.latitude), longitude: parseFloat(userALocation.longitude) },
-      { latitude: parseFloat(userBLocation.latitude), longitude: parseFloat(userBLocation.longitude) }
+      { latitude: parseFloat(latA), longitude: parseFloat(lngA) },
+      { latitude: parseFloat(latB), longitude: parseFloat(lngB) }
     );
     console.log(`📏 Calculated distance: ${distance.toFixed(2)} meters between ${userAId} and ${userBId}`);
     console.log('🔍 Comparing locations:', { userA: userALocation, userB: userBLocation });
+
     if (distance <= PROXIMITY_THRESHOLD) {
       console.log(`📏 Users are within ${PROXIMITY_THRESHOLD} meters!`);
       hasLoggedActivityRef.current = true;
@@ -156,7 +185,7 @@ export default function NicAssistScreen() {
   }, [userAId, userBId, sessionId, userALocation, userBLocation, currentUserId]);
 
   useEffect(() => {
-    if (userALocation?.latitude && userBLocation?.latitude && userALocation !== userBLocation) {
+    if (userALocation?.latitude && userBLocation?.latitude) {
       const timeoutId = setTimeout(() => checkProximityAndUpdate(), 500);
       return () => clearTimeout(timeoutId);
     }
@@ -171,24 +200,26 @@ export default function NicAssistScreen() {
 
     const init = async () => {
       try {
-        if (currentUserId !== userAId && currentUserId !== userBId) {
-          return;
-        }
-        if (!userAId || !userBId) {
-          return;
-        }
+        if (currentUserId !== userAId && currentUserId !== userBId) return;
+        if (!userAId || !userBId) return;
         const userADoc = await getDoc(doc(db, 'users', userAId));
         const userBDoc = await getDoc(doc(db, 'users', userBId));
-        if (!userADoc.exists() || !userBDoc.exists()) {
-          return;
-        }
+        if (!userADoc.exists() || !userBDoc.exists()) return;
         setUserAData(userADoc.data());
         setUserBData(userBDoc.data());
 
         const userADocRef = doc(db, 'users', userAId);
         const userBDocRef = doc(db, 'users', userBId);
-        await updateDoc(userADocRef, { sessionId: sessionIdRef.current }, { merge: true });
-        await updateDoc(userBDocRef, { sessionId: sessionIdRef.current }, { merge: true });
+        await updateDoc(userADocRef, { sessionId: sessionIdRef.current, lastActive: Date.now() }, { merge: true });
+        await updateDoc(userBDocRef, { sessionId: sessionIdRef.current, lastActive: Date.now() }, { merge: true });
+
+        const updateLastActive = async () => {
+          if (!lastActiveIntervalRef.current) return;
+          const currentUserRef = doc(db, 'users', currentUserId);
+          await updateDoc(currentUserRef, { lastActive: Date.now() }, { merge: true });
+          console.log(`⏰ Updated lastActive for ${currentUserId} at ${new Date(Date.now()).toISOString()} from NAS`);
+        };
+        lastActiveIntervalRef.current = setInterval(updateLastActive, 10000);
 
         unsubscribeSession.current = onSnapshot(doc(db, 'users', currentUserId), (docSnapshot) => {
           if (docSnapshot.exists() && !hasNavigatedRef.current) {
@@ -203,14 +234,10 @@ export default function NicAssistScreen() {
         const chatDocRef = doc(db, 'chats', chatId);
 
         const createAndVerifyChat = async (attempt = 0) => {
-          if (attempt > 3) {
-            return;
-          }
+          if (attempt > 3) return;
           try {
             let chatDoc;
-            try {
-              chatDoc = await getDoc(chatDocRef);
-            } catch (getDocError) {
+            try { chatDoc = await getDoc(chatDocRef); } catch (getDocError) {
               await new Promise(resolve => setTimeout(resolve, 2000));
               await createAndVerifyChat(attempt + 1);
               return;
@@ -221,17 +248,13 @@ export default function NicAssistScreen() {
               while (retries < 5) {
                 const latestChatDoc = await getDoc(chatDocRef);
                 const participants = latestChatDoc.data()?.participants || [];
-                if (participants.includes(currentUserId)) {
-                  break;
-                }
+                if (participants.includes(currentUserId)) break;
                 await new Promise(resolve => setTimeout(resolve, 1000));
                 retries++;
               }
             }
-
             const verifiedChatDoc = await getDoc(chatDocRef);
-            if (verifiedChatDoc.exists() && verifiedChatDoc.data().participants.includes(currentUserId)) {
-            } else {
+            if (!verifiedChatDoc.exists() || !verifiedChatDoc.data().participants.includes(currentUserId)) {
               await new Promise(resolve => setTimeout(resolve, 2000));
               await createAndVerifyChat(attempt + 1);
               return;
@@ -244,9 +267,7 @@ export default function NicAssistScreen() {
         await createAndVerifyChat();
 
         const attachListeners = async (attempt = 0) => {
-          if (attempt > 3) {
-            return;
-          }
+          if (attempt > 3) return;
           try {
             const docSnap = await getDoc(chatDocRef);
             if (docSnap.exists() && docSnap.data().participants.includes(currentUserId)) {
@@ -286,6 +307,7 @@ export default function NicAssistScreen() {
             const data = docSnapshot.data();
             if (data.location) {
               setUserALocation(data.location);
+              console.log(`📍 userA Location updated: ${data.location.latitude}, ${data.location.longitude}`);
             }
           }
         }, (error) => console.error('Location A listener error:', error));
@@ -295,6 +317,7 @@ export default function NicAssistScreen() {
             const data = docSnapshot.data();
             if (data.location) {
               setUserBLocation(data.location);
+              console.log(`📍 userB Location updated: ${data.location.latitude}, ${data.location.longitude}`);
             }
           }
         }, (error) => console.error('Location B listener error:', error));
@@ -314,6 +337,11 @@ export default function NicAssistScreen() {
       if (unsubscribeLocationB.current) unsubscribeLocationB.current();
       hasNavigatedRef.current = false;
       setShowAlert(false);
+      if (lastActiveIntervalRef.current) {
+        clearInterval(lastActiveIntervalRef.current);
+        lastActiveIntervalRef.current = null;
+        console.log(`🧹 Cleared lastActiveInterval for ${currentUserId}`);
+      }
     };
   }, [userAId, userBId, sessionId, initialNicAssistLat, initialNicAssistLng]);
 
@@ -327,6 +355,11 @@ export default function NicAssistScreen() {
         if (unsubscribeLocationB.current) unsubscribeLocationB.current();
         hasNavigatedRef.current = false;
         setShowAlert(false);
+        if (lastActiveIntervalRef.current) {
+          clearInterval(lastActiveIntervalRef.current);
+          lastActiveIntervalRef.current = null;
+          console.log(`🧹 Cleared lastActiveInterval in useFocusEffect for ${currentUserId}`);
+        }
       };
     }, [])
   );
@@ -358,13 +391,40 @@ export default function NicAssistScreen() {
     try {
       const userADocRef = doc(db, 'users', userAId);
       const userBDocRef = doc(db, 'users', userBId);
-      const otherUserId = isUserA ? userBId : userAId;
+
+      if (unsubscribeLocationA.current) unsubscribeLocationA.current();
+      if (unsubscribeLocationB.current) unsubscribeLocationB.current();
+      if (unsubscribeSession.current) unsubscribeSession.current();
+      if (lastActiveIntervalRef.current) {
+        clearInterval(lastActiveIntervalRef.current);
+        lastActiveIntervalRef.current = null;
+        console.log(`🧹 Cleared lastActiveInterval for ${currentUserId} on cancel`);
+      }
+
       if (isUserA) {
-        await updateDoc(userADocRef, { nicQuestAssistedBy: null, showAlert: false, sessionId: "" }, { merge: true });
-        await updateDoc(userBDocRef, { nicAssistResponse: null, showAlert: true, sessionId: sessionIdRef.current }, { merge: true });
+        await updateDoc(userADocRef, {
+          lastActive: null,
+          nicQuestAssistedBy: null,
+          showAlert: false,
+          sessionId: "",
+        }, { merge: true });
+        await updateDoc(userBDocRef, {
+          nicAssistResponse: null,
+          showAlert: true,
+          sessionId: sessionIdRef.current
+        }, { merge: true });
       } else {
-        await updateDoc(userBDocRef, { nicAssistResponse: null, showAlert: false, sessionId: "" }, { merge: true });
-        await updateDoc(userADocRef, { nicQuestAssistedBy: null, showAlert: true, sessionId: sessionIdRef.current }, { merge: true });
+        await updateDoc(userBDocRef, {
+          lastActive: null,
+          nicAssistResponse: null,
+          showAlert: false,
+          sessionId: "",
+        }, { merge: true });
+        await updateDoc(userADocRef, {
+          nicQuestAssistedBy: null,
+          showAlert: true,
+          sessionId: sessionIdRef.current
+        }, { merge: true });
       }
       navigation.navigate('Tabs', { screen: 'Home' });
     } catch (error) {
@@ -373,7 +433,7 @@ export default function NicAssistScreen() {
   };
 
   const handleAlertOk = async () => {
-    await updateDoc(doc(db, 'users', currentUserId), { showAlert: false, sessionId: "" }, { merge: true });
+    await updateDoc(doc(db, 'users', currentUserId), { lastActive: null, showAlert: false, sessionId: "" }, { merge: true });
     setModalVisible(false);
     navigation.navigate('Tabs', { screen: 'Home' });
     hasNavigatedRef.current = true;
@@ -450,7 +510,8 @@ export default function NicAssistScreen() {
               </View>
             </View>
           </View>
-          <MapView
+          {isValidLocation(userALocation) && isValidLocation(userBLocation) && (
+            <MapView
             style={styles.map}
             initialRegion={{
               latitude: (userALocation.latitude + userBLocation.latitude + nicAssistLat) / 3,
@@ -510,6 +571,8 @@ export default function NicAssistScreen() {
               pinColor="#60a8b8"
             />
           </MapView>
+          )}
+          
         </View>
       )}
       <TouchableOpacity style={styles.bottomButton} onPress={handleCancel}>

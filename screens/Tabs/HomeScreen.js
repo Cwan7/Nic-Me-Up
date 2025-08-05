@@ -6,7 +6,7 @@ import { collection, getDocs, doc, getDoc, updateDoc, onSnapshot, query, orderBy
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 
 // Functions for Notifications/Distance
-export const sendNicQuestNotification = async (userName, currentUserId, otherUserData, userLocation, assist, isGroup2) => {
+export const sendNicQuestNotification = async (userName, currentUserId, otherUserData, userLocation, assist, isGroup2, userAQuestDistance) => {
   try {
     const distance = calculateDistance(
       userLocation.latitude,
@@ -15,12 +15,10 @@ export const sendNicQuestNotification = async (userName, currentUserId, otherUse
       assist.NicAssistLng
     );
 
-    const questDistanceFeet = otherUserData.nicQuestDistance || 250;
-    const questDistance = questDistanceFeet * 0.3048;
+    console.log(`📏 Distance to ${otherUserData.username} ${isGroup2 ? 'current location' : 'NicAssistAddress'} (${assist.NicAssistAddress}): ${distance.toFixed(2)} meters, userAQuestDistance: ${userAQuestDistance}m`);
 
-    console.log(`📏 Distance to ${otherUserData.username} ${isGroup2 ? 'current location' : 'NicAssistAddress'} (${assist.NicAssistAddress}): ${distance.toFixed(2)} meters`);
-
-    if (distance <= questDistance && otherUserData.expoPushToken) {
+    if (distance <= userAQuestDistance && otherUserData.expoPushToken) {
+      console.log(`🔑 Push token for ${otherUserData.username}:`, otherUserData.expoPushToken);
       const message = {
         to: otherUserData.expoPushToken,
         sound: 'default',
@@ -33,7 +31,7 @@ export const sendNicQuestNotification = async (userName, currentUserId, otherUse
           profilePhoto: auth.currentUser?.photoURL || null,
           nicAssistLat: assist.NicAssistLat,
           nicAssistLng: assist.NicAssistLng,
-          isGroup2: isGroup2, // Add isGroup2 to the data payload
+          isGroup2: isGroup2,
         },
       };
 
@@ -50,14 +48,14 @@ export const sendNicQuestNotification = async (userName, currentUserId, otherUse
       const result = await response.json();
       console.log('📬 Notification sent:', result);
     } else {
-      console.log('⚠️ Not sending notification: distance too far or no expoPushToken');
+      console.log('⚠️ Not sending notification: distance too far or no expoPushToken, token:', otherUserData.expoPushToken);
     }
   } catch (error) {
     console.error('❌ Error sending NicQuest notification:', error);
   }
 };
 
-export const sendLocationBasedNotification = async (userName, currentUserId, otherUserData, userLocation, location) => {
+export const sendLocationBasedNotification = async (userName, currentUserId, otherUserData, userLocation, location, userAQuestDistance) => {
   try {
     const distance = calculateDistance(
       userLocation.latitude,
@@ -66,12 +64,10 @@ export const sendLocationBasedNotification = async (userName, currentUserId, oth
       location.longitude
     );
 
-    const questDistanceFeet = otherUserData.nicQuestDistance || 250;
-    const questDistance = questDistanceFeet * 0.3048;
+    console.log(`📏 Distance to ${otherUserData.username} current location: ${distance.toFixed(2)} meters, userAQuestDistance: ${userAQuestDistance}m`);
 
-    console.log(`📏 Distance to ${otherUserData.username} current location: ${distance.toFixed(2)} meters`);
-
-    if (distance <= questDistance && otherUserData.expoPushToken) {
+    if (distance <= userAQuestDistance && otherUserData.expoPushToken) {
+      console.log(`🔑 Push token for ${otherUserData.username}:`, otherUserData.expoPushToken);
       const message = {
         to: otherUserData.expoPushToken,
         sound: 'default',
@@ -79,7 +75,7 @@ export const sendLocationBasedNotification = async (userName, currentUserId, oth
         body: `You’re nearby—offer assistance!`,
         data: {
           type: 'NicQuest',
-          userId: new Date(),
+          userId: currentUserId,
           displayName: userName,
           profilePhoto: auth.currentUser?.photoURL || null,
           nicAssistLat: location.latitude,
@@ -100,7 +96,7 @@ export const sendLocationBasedNotification = async (userName, currentUserId, oth
       const result = await response.json();
       console.log('📬 Location-based notification sent:', result);
     } else {
-      console.log('⚠️ Not sending location-based notification: distance too far or no expoPushToken');
+      console.log('⚠️ Not sending location-based notification: distance too far or no expoPushToken, token:', otherUserData.expoPushToken);
     }
   } catch (error) {
     console.error('❌ Error sending location-based notification:', error);
@@ -147,8 +143,9 @@ export default function HomeScreen({ route }) {
   useEffect(() => {
     const loadUserData = async () => {
       const currentUser = auth.currentUser;
+      console.log('🔍 Loading user data, isFocused:', isFocused, 'currentUser:', currentUser?.uid);
       if (!currentUser || !isFocused) {
-        console.log('No authenticated user or not focused, delaying load');
+        console.log('⏸️ Delaying load: no user or not focused');
         return;
       }
 
@@ -160,36 +157,34 @@ export default function HomeScreen({ route }) {
       try {
         const userDocRef = doc(db, 'users', currentUser.uid);
         const userDoc = await getDoc(userDocRef);
+        console.log('📋 User doc fetched:', userDoc.exists());
         const userData = userDoc.data();
 
         if (userData?.location) {
           setUserLocation(userData.location);
           setQuestDistance(userData.nicQuestDistance || 250);
           user.photoURL = userData.photoURL || user.photoURL;
-
-          const { latitude, longitude } = userData.location;
-          setRegion({
-            latitude,
-            longitude,
-            ...regionRef.current,
-          });
+          console.log('📍 User location set:', userData.location, 'questDistance:', userData.nicQuestDistance || 250);
         } else {
           setRegion({
             latitude: 39.7405,
             longitude: -104.9706,
             ...regionRef.current,
           });
+          console.log('⚠️ No user location, using default region:', { latitude: 39.7405, longitude: -104.9706 });
         }
 
         const querySnapshot = await getDocs(collection(db, 'users'));
         const assists = [];
         const locations = [];
         const now = Date.now();
+        console.log('🔍 Querying users, total docs:', querySnapshot.size);
 
         querySnapshot.forEach(docSnap => {
           if (docSnap.id === currentUser.uid) return;
 
           const data = docSnap.data();
+          console.log(`👤 User ${docSnap.id}, NicAssists count: ${data.NicAssists?.length || 0}, location:`, data.location);
           if (data.NicAssists) {
             data.NicAssists.forEach(assist => {
               if (assist.Active) {
@@ -199,6 +194,7 @@ export default function HomeScreen({ route }) {
                   NicAssistLat: assist.NicAssistLat,
                   NicAssistLng: assist.NicAssistLng,
                 });
+                console.log(`✅ Active NicAssist for ${docSnap.id}: ${assist.NicAssistAddress}`);
               }
             });
           }
@@ -214,11 +210,12 @@ export default function HomeScreen({ route }) {
               longitude: data.location.longitude,
               username: data.username || 'Unknown',
             });
+            console.log(`📍 Recent location for ${docSnap.id}:`, data.location);
           }
         });
         setNicAssists(assists);
         setRecentLocations(locations);
-        console.log('Recent locations:', locations);
+        console.log('🌍 Updated nicAssists:', assists, 'recentLocations:', locations);
 
         const userIds = new Set();
         if (unsubscribeActivities.current) {
@@ -229,6 +226,7 @@ export default function HomeScreen({ route }) {
         const activityDocRef = doc(db, 'recentActivities', 'allActivities');
         unsubscribeActivities.current = onSnapshot(activityDocRef, (activityDoc) => {
           const activities = activityDoc.exists() ? activityDoc.data().activities || [] : [];
+          console.log('📊 Recent activities fetched:', activities.length);
           setRecentActivities(activities.sort((a, b) => b.timestamp - a.timestamp).slice(0, 5));
           
           activities.forEach(act => {
@@ -247,6 +245,7 @@ export default function HomeScreen({ route }) {
                     ...prev,
                     [uid]: { displayName: data.username || 'Unknown' },
                   }));
+                  console.log(`👤 User info fetched for ${uid}:`, data.username);
                 }
               } catch (err) {
                 console.warn(`⚠️ Failed to fetch user info for ${uid}:`, err);
@@ -260,6 +259,7 @@ export default function HomeScreen({ route }) {
         if (!isListenerActive.current) {
           unsubscribeLocation.current = onSnapshot(userDocRef, (docSnapshot) => {
             const data = docSnapshot.data();
+            console.log('📍 Live location update:', data?.location ? 'Yes' : 'No');
             if (docSnapshot.exists() && data?.location) {
               const newLocation = data.location;
               setUserLocation(newLocation);
@@ -279,6 +279,7 @@ export default function HomeScreen({ route }) {
                   longitude: newLocation.longitude,
                   ...regionRef.current,
                 });
+                console.log('🌐 Region initialized:', newLocation);
               }
             }
           }, (error) => {
@@ -309,10 +310,13 @@ export default function HomeScreen({ route }) {
     };
   }, [isFocused]);
 
- const handleNicQuest = async () => {
-  console.log(`📲 ${userName} NicQuest button pressed`);
+const handleNicQuest = async () => {
+  console.log(`📲 ${userName} NicQuest button pressed, userLocation:`, userLocation, 'questDistance:', questDistance);
   const currentUser = auth.currentUser;
-  if (!currentUser || !userLocation) return;
+  if (!currentUser || !userLocation) {
+    console.log('⛔ No currentUser or userLocation');
+    return;
+  }
 
   try {
     const sessionId = Date.now().toString();
@@ -325,6 +329,7 @@ export default function HomeScreen({ route }) {
     let nearestAssist = null;
     let minDistance = Infinity;
     const now = Date.now();
+    const userAQuestDistance = questDistance * 0.3048;
 
     usersSnapshot.forEach(docSnap => {
       if (docSnap.id === currentUser.uid) return;
@@ -334,6 +339,8 @@ export default function HomeScreen({ route }) {
       const otherLocation = otherUserData.location;
       const notifiedUserIds = new Set();
 
+      console.log(`🔍 Checking user ${docSnap.id}, UserA questDistance: ${userAQuestDistance}m, activeAssists:`, activeAssists, 'location:', otherLocation);
+
       activeAssists.forEach(assist => {
         const distance = calculateDistance(
           userLocation.latitude,
@@ -341,11 +348,9 @@ export default function HomeScreen({ route }) {
           assist.NicAssistLat,
           assist.NicAssistLng
         );
-        const questDistance = (otherUserData.nicQuestDistance || 250) * 0.3048;
-
-        if (distance <= questDistance && otherUserData.expoPushToken && !notifiedUserIds.has(docSnap.id)) {
-          console.log(`📍 NicAssist-based NicQuest to ${docSnap.id}, distance ${distance.toFixed(2)}m`);
-          sendNicQuestNotification(userName, currentUser.uid, otherUserData, userLocation, assist, false); // Group 1
+        console.log(`📍 NicAssist ${assist.NicAssistAddress} distance: ${distance.toFixed(2)}m, within ${userAQuestDistance}m? ${distance <= userAQuestDistance}`);
+        if (distance <= userAQuestDistance && otherUserData.expoPushToken && !notifiedUserIds.has(docSnap.id)) {
+          sendNicQuestNotification(userName, currentUser.uid, otherUserData, userLocation, assist, false, userAQuestDistance);
           notifiedUserIds.add(docSnap.id);
           notifiedUsers.push({ userId: docSnap.id });
 
@@ -368,15 +373,9 @@ export default function HomeScreen({ route }) {
           otherLocation.latitude,
           otherLocation.longitude
         );
-        const questDistance = (otherUserData.nicQuestDistance || 250) * 0.3048;
-
-        if (distance <= questDistance && otherUserData.expoPushToken && !notifiedUserIds.has(docSnap.id)) {
-          console.log(`📍 Location-based NicQuest to ${docSnap.id}, distance ${distance.toFixed(2)}m`);
-          sendNicQuestNotification(userName, currentUser.uid, otherUserData, userLocation, {
-            NicAssistLat: otherLocation.latitude,
-            NicAssistLng: otherLocation.longitude,
-            NicAssistAddress: "Current Location",
-          }, true); // Group 2
+        console.log(`📍 Location-based distance to ${docSnap.id}: ${distance.toFixed(2)}m, within ${userAQuestDistance}m? ${distance <= userAQuestDistance}`);
+        if (distance <= userAQuestDistance && otherUserData.expoPushToken && !notifiedUserIds.has(docSnap.id)) {
+          sendLocationBasedNotification(userName, currentUser.uid, otherUserData, userLocation, otherLocation, userAQuestDistance);
           notifiedUserIds.add(docSnap.id);
           notifiedUsers.push({ userId: docSnap.id });
 
@@ -393,21 +392,25 @@ export default function HomeScreen({ route }) {
     });
 
     if (notifiedUsers.length > 0 || nearestAssist) {
-      console.log(`📬 NicQuest sent to users: ${notifiedUsers.map(n => n.userId).join(', ')}`);
-      navigation.navigate('NicQuestWaiting', {
-        userId: currentUser.uid,
-        questDistance,
-        sessionId,
-        nicAssistLat: nearestAssist?.NicAssistLat,
-        nicAssistLng: nearestAssist?.NicAssistLng,
-        isGroup2: nearestAssist?.NicAssistAddress === "Current Location", // Set based on nearestAssist
-      });
+      console.log(`📬 NicQuest sent to users: ${notifiedUsers.map(n => n.userId).join(', ')}, nearestAssist:`, nearestAssist);
+      setTimeout(() => {
+        navigation.navigate('NicQuestWaiting', {
+          userId: currentUser.uid,
+          questDistance,
+          sessionId,
+          nicAssistLat: nearestAssist?.NicAssistLat || userLocation.latitude,
+          nicAssistLng: nearestAssist?.NicAssistLng || userLocation.longitude,
+          isGroup2: nearestAssist?.NicAssistAddress === "Current Location",
+        });
+      }, 100); // Delay to ensure stack is ready
     } else {
-      console.log('⚠️ No nearby active NicAssists or recent locations');
+      console.log('⚠️ No nearby active NicAssists or recent locations, userLocation:', userLocation, 'nicAssists:', nicAssists, 'recentLocations:', recentLocations);
+      await updateDoc(userADocRef, { sessionId: "" }, { merge: true });
       Alert.alert('No Available Users', 'No active NicAssists or recent users within range.');
     }
   } catch (error) {
     console.error('❌ Error sending NicQuest:', error);
+    await updateDoc(userADocRef, { sessionId: "" }, { merge: true });
   }
 };
 

@@ -11,7 +11,7 @@ export default function NicQuestWaitingScreen({ route }) {
   const unsubscribeRef = useRef(null);
   const hasNavigatedRef = useRef(false);
 
-  useEffect(() => {
+useEffect(() => {
   if (!unsubscribeRef.current) {
     const q = query(collection(db, 'users'), where('nicAssistResponse', '==', userId));
     const unsubscribe = onSnapshot(q, async (snapshot) => {
@@ -21,14 +21,16 @@ export default function NicQuestWaitingScreen({ route }) {
         console.log('Assister found, navigating to NicAssistScreen');
         const userBId = snapshot.docs[0].id;
         const userADocRef = doc(db, 'users', userId);
-        await updateDoc(userADocRef, { sessionId }, { merge: true }); //removed sessionStatus: true,
-        navigation.navigate('NicAssist', { 
-          userAId: userId, 
-          userBId, 
-          sessionId,
-          nicAssistLat: route.params.nicAssistLat,
-          nicAssistLng: route.params.nicAssistLng,
-        });
+        await updateDoc(userADocRef, { sessionId }, { merge: true });
+        setTimeout(() => {
+          navigation.navigate('NicAssist', { 
+            userAId: userId, 
+            userBId, 
+            sessionId,
+            nicAssistLat: route.params.nicAssistLat,
+            nicAssistLng: route.params.nicAssistLng,
+          });
+        }, 100); // Delay to stabilize navigation
         hasNavigatedRef.current = true;
       }
     }, (error) => {
