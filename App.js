@@ -228,7 +228,7 @@ export default function App() {
     };
   }, []);
 
- const handleModalAction = async (action) => {
+const handleModalAction = async (action) => {
   console.log('handleModalAction called with action:', action);
   if (action === 'NicAssist' && !hasNavigated.current) {
     const userADocRef = doc(db, 'users', notification.userId);
@@ -236,13 +236,13 @@ export default function App() {
     const userAData = userADoc.data();
     console.log('UserA data:', userAData);
 
-    if (userAData?.nicQuestAssistedBy) {
+    if (userAData?.NicMeUp?.nicQuestAssistedBy) {
       Alert.alert('NicQuest Already Assisted!', 'This NicQuest has already been assisted by another user.');
     } else {
       try {
-        const sessionId = userAData?.sessionId;
+        const sessionId = userAData?.NicMeUp?.sessionId;
         if (!sessionId) {
-          console.error('❌ Could not retrieve sessionId from userA');
+          console.error('❌ Could not retrieve sessionId from userA.NicMeUp');
           return;
         }
 
@@ -254,8 +254,22 @@ export default function App() {
         }
 
         const userBDocRef = doc(db, 'users', auth.currentUser.uid);
-        await setDoc(userBDocRef, { nicAssistResponse: notification.userId }, { merge: true });
-        await updateDoc(userADocRef, { nicQuestAssistedBy: auth.currentUser.uid }, { merge: true });
+        const userBData = (await getDoc(userBDocRef)).data();
+        await updateDoc(userBDocRef, {
+          NicMeUp: {
+            ...userBData?.NicMeUp,
+            nicAssistResponse: notification.userId
+          }
+        }, { merge: true });
+
+        const userADataCopy = userADoc.data();
+        await updateDoc(userADocRef, {
+          NicMeUp: {
+            ...userADataCopy?.NicMeUp,
+            nicQuestAssistedBy: auth.currentUser.uid
+          }
+        }, { merge: true });
+
         console.log(`✅ NicAssist selected for user ${notification?.userId}`);
         hasNavigated.current = true;
         navigationRef.current?.navigate('NicAssist', {
@@ -264,7 +278,7 @@ export default function App() {
           sessionId,
           nicAssistLat,
           nicAssistLng,
-          isGroup2: notification.isGroup2 || false, // Pass isGroup2 from notification
+          isGroup2: notification.isGroup2 || false,
         });
       } catch (error) {
         console.error('Error updating Firestore for NicAssist:', error);

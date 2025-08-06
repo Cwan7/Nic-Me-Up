@@ -215,7 +215,7 @@ export default function HomeScreen({ route }) {
         });
         setNicAssists(assists);
         setRecentLocations(locations);
-        console.log('🌍 Updated nicAssists:', assists, 'recentLocations:', locations);
+        
 
         const userIds = new Set();
         if (unsubscribeActivities.current) {
@@ -321,7 +321,15 @@ const handleNicQuest = async () => {
   try {
     const sessionId = Date.now().toString();
     const userADocRef = doc(db, 'users', currentUser.uid);
-    await updateDoc(userADocRef, { sessionId }, { merge: true });
+    await updateDoc(userADocRef, {
+        NicMeUp: {
+          sessionId: sessionId,
+          showAlert: false,
+          nicQuestAssistedBy: null,
+          nicAssistResponse: null,
+          lastActive: null
+        }
+      }, { merge: true });
     console.log('Session initialized with sessionId:', sessionId);
 
     const usersSnapshot = await getDocs(collection(db, 'users'));
