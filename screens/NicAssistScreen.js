@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Alert, Dimensions, Modal, FlatList, TextInput, KeyboardAvoidingView, Keyboard } from 'react-native';
 import { db, auth } from '../firebase';
-import { doc, getDoc, updateDoc, onSnapshot, collection, addDoc, setDoc, arrayUnion, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, onSnapshot, serverTimestamp, collection, addDoc, setDoc, arrayUnion, query, where, getDocs } from 'firebase/firestore';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import MapView, { Marker } from 'react-native-maps';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -14,6 +14,7 @@ const CancelAlert = ({ visible, onOk, userId }) => {
   }, [visible]);
 
   if (!isVisible) return null;
+  console.log(`Alert Shown`)
   return Alert.alert(
     'NicQuest Canceled',
     'The NicQuest session has been canceled.',
@@ -41,6 +42,7 @@ const isValidLocation = (loc) =>
   typeof loc.longitude === 'number' &&
   !isNaN(loc.latitude) &&
   !isNaN(loc.longitude);
+
 
 export default function NicAssistScreen() {
   const route = useRoute();
@@ -70,10 +72,12 @@ export default function NicAssistScreen() {
   const isCheckingRef = useRef(false);
   const [nicAssistLat, setNicAssistLat] = useState(initialNicAssistLat);
   const [nicAssistLng, setNicAssistLng] = useState(initialNicAssistLng);
-  const lastActiveIntervalRef = useRef(null);
+  const [alertShown, setAlertShown] = useState(false);
+  const heartbeatIntervalRef = useRef(null);
 
   const userADocRef = doc(db, 'users', userAId);
   const userADoc = useRef(null);
+  
   useEffect(() => {
     const fetchUserAData = async () => {
       userADoc.current = await getDoc(userADocRef);
@@ -84,6 +88,29 @@ export default function NicAssistScreen() {
     fetchUserAData();
   }, [userAId]);
   const questDistance = (userAData?.nicQuestDistance || 250) * 0.3048;
+
+const startHeartbeat = (sessionId, userRole) => {
+  const sessionRef = doc(db, 'nicSessions', sessionId);
+  return heartbeatIntervalRef.current = setInterval(() => {
+    updateDoc(sessionRef, {
+      [userRole === 'userA' ? 'userAActiveAt' : 'userBActiveAt']: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    console.log("🆕 Heartbeat interval set for", currentUserId);
+  }, 10000); 
+};
+//30 second heatbeat when NAS mounts  
+useEffect(() => {
+  if (!sessionId || !userAId || !userBId || !currentUserId) return;
+
+  const userRole = currentUserId === userAId ? 'userA' : 'userB';
+  const intervalId = startHeartbeat(sessionId, userRole);
+
+  return () => {
+    clearInterval(intervalId);
+    console.log('🧹 Cleaned up heartbeat tracking on unmount');
+  };
+}, [sessionId, userAId, userBId, currentUserId]);
 
   useEffect(() => {
     if (isGroup2 && userBLocation?.latitude && userBLocation?.longitude) {
@@ -188,202 +215,190 @@ export default function NicAssistScreen() {
     }
   }, [checkProximityAndUpdate, userALocation, userBLocation]);
 
-  useEffect(() => {
-    if (!userAId || !userBId || !currentUserId) return;
+useEffect(() => {
+  if (!userAId || !userBId || !currentUserId) return;
 
-    let firstLoad = true;
+  let firstLoad = true;
 
-    const init = async () => {
-      try {
-        if (currentUserId !== userAId && currentUserId !== userBId) return;
-        if (!userAId || !userBId) return;
-        const userADoc = await getDoc(doc(db, 'users', userAId));
-        const userBDoc = await getDoc(doc(db, 'users', userBId));
-        if (!userADoc.exists() || !userBDoc.exists()) return;
-        setUserAData(userADoc.data());
-        setUserBData(userBDoc.data());
+  const init = async () => {
+    try {
+      if (currentUserId !== userAId && currentUserId !== userBId) return;
 
-        const userADocRef = doc(db, 'users', userAId);
-        const userBDocRef = doc(db, 'users', userBId);
-        const userADataCopy = userADoc.data();
-        const userBDataCopy = userBDoc.data();
-        await updateDoc(userADocRef, {
-          NicMeUp: {
-            ...userADataCopy?.NicMeUp || {},
-            sessionId: sessionIdRef.current,
-            lastActive: Date.now(),
-            nicQuestAssistedBy: userADataCopy?.NicMeUp?.nicQuestAssistedBy // Preserve existing value
-          }
-        }, { merge: true });
-        await updateDoc(userBDocRef, {
-          NicMeUp: {
-            ...userBDataCopy?.NicMeUp || {},
-            sessionId: sessionIdRef.current,
-            lastActive: Date.now()
-          }
-        }, { merge: true });
+      // Fetch userA & userB data
+      const [userADoc, userBDoc] = await Promise.all([
+        getDoc(doc(db, 'users', userAId)),
+        getDoc(doc(db, 'users', userBId))
+      ]);
+      if (!userADoc.exists() || !userBDoc.exists()) return;
 
-        const updateLastActive = async () => {
-          if (!lastActiveIntervalRef.current) return;
-          const currentUserRef = doc(db, 'users', currentUserId);
-          const currentUserDoc = await getDoc(currentUserRef);
-          const currentUserData = currentUserDoc.data();
-          if (!currentUserData?.NicMeUp?.showAlert) {
-            await updateDoc(currentUserRef, {
-              NicMeUp: {
-                ...currentUserData?.NicMeUp || {},
-                lastActive: Date.now()
-              }
+      const userAData = userADoc.data();
+      const userBData = userBDoc.data();
+
+      setUserAData(userAData);
+      setUserBData(userBData);
+
+      // Start heartbeat using new nicSessions logic
+      // startHeartbeat(currentUserId, sessionIdRef.current);
+
+      // Setup alert listeners
+      const handleSnapshot = (docSnapshot, userId) => {
+        if (!docSnapshot.exists()) return;
+        const data = docSnapshot.data();
+        if (
+          data.NicMeUp?.showAlert &&
+          data.NicMeUp.sessionId === sessionIdRef.current &&
+          !hasNavigatedRef.current &&
+          !alertShown
+        ) {
+          setShowAlert(true);
+          setAlertShown(true);
+        }
+      };
+
+      const unsubscribeSessionA = onSnapshot(doc(db, 'users', userAId), doc => handleSnapshot(doc, userAId));
+      const unsubscribeSessionB = onSnapshot(doc(db, 'users', userBId), doc => handleSnapshot(doc, userBId));
+
+      unsubscribeSession.current = () => {
+        unsubscribeSessionA();
+        unsubscribeSessionB();
+      };
+
+      // Chat setup
+      const chatId = [userAId, userBId].sort().join('_');
+      const chatDocRef = doc(db, 'chats', chatId);
+
+      const createChatIfNotExists = async (attempt = 0) => {
+        if (attempt > 3) return;
+
+        try {
+          const chatDoc = await getDoc(chatDocRef);
+          if (!chatDoc.exists()) {
+            await setDoc(chatDocRef, {
+              participants: [userAId, userBId],
+              unreadCount: { [userAId]: 0, [userBId]: 0 },
+              lastMessage: null
             }, { merge: true });
-            console.log(`⏰ Updated NicMeUp.lastActive for ${currentUserId} at ${new Date(Date.now()).toISOString()} from NAS`);
-          } else {
-            console.log(`⏰ Skipped updating lastActive for ${currentUserId} due to showAlert: true`);
           }
-        };
-        lastActiveIntervalRef.current = setInterval(updateLastActive, 10000);
-
-        unsubscribeSession.current = onSnapshot(doc(db, 'users', currentUserId), (docSnapshot) => {
-          if (docSnapshot.exists() && !hasNavigatedRef.current) {
-            const data = docSnapshot.data();
-            if (data.NicMeUp?.showAlert && data.NicMeUp.sessionId === sessionIdRef.current) {
-              setShowAlert(true);
-            }
+          const verifiedDoc = await getDoc(chatDocRef);
+          if (!verifiedDoc.exists() || !verifiedDoc.data().participants.includes(currentUserId)) {
+            await new Promise(r => setTimeout(r, 2000));
+            await createChatIfNotExists(attempt + 1);
           }
-        }, (error) => console.error('Session status listener error for user:', currentUserId, error));
+        } catch {
+          await new Promise(r => setTimeout(r, 2000));
+          await createChatIfNotExists(attempt + 1);
+        }
+      };
 
-        const chatId = [userAId, userBId].sort().join('_');
-        const chatDocRef = doc(db, 'chats', chatId);
+      await createChatIfNotExists();
 
-        const createAndVerifyChat = async (attempt = 0) => {
-          if (attempt > 3) return;
-          try {
-            let chatDoc;
-            try { chatDoc = await getDoc(chatDocRef); } catch (getDocError) {
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              await createAndVerifyChat(attempt + 1);
-              return;
-            }
-            if (!chatDoc.exists()) {
-              await setDoc(chatDocRef, { participants: [userAId, userBId], unreadCount: { [userBId]: 0, [userAId]: 0 }, lastMessage: null }, { merge: true });
-              let retries = 0;
-              while (retries < 5) {
-                const latestChatDoc = await getDoc(chatDocRef);
-                const participants = latestChatDoc.data()?.participants || [];
-                if (participants.includes(currentUserId)) break;
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                retries++;
+      // Attach chat listeners
+      const attachChatListeners = async (attempt = 0) => {
+        if (attempt > 3) return;
+
+        try {
+          const chatSnap = await getDoc(chatDocRef);
+          if (!chatSnap.exists() || !chatSnap.data().participants.includes(currentUserId)) {
+            await new Promise(r => setTimeout(r, 2000));
+            return attachChatListeners(attempt + 1);
+          }
+
+          unsubscribeMessages.current = onSnapshot(
+            collection(db, 'chats', chatId, 'messages'),
+            (snapshot) => {
+              const msgList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+              const sortedMessages = msgList.sort((a, b) => a.timestamp - b.timestamp);
+              setMessages(sortedMessages);
+              if (
+                sortedMessages.length > 0 &&
+                sortedMessages[sortedMessages.length - 1].senderId !== currentUserId &&
+                !modalVisible
+              ) {
+                const newCount = unreadCount + 1;
+                updateDoc(chatDocRef, {
+                  [`unreadCount.${currentUserId}`]: newCount,
+                  lastMessage: sortedMessages[sortedMessages.length - 1].text
+                }, { merge: true });
+              }
+            },
+            (error) => console.error('Message listen error:', error)
+          );
+
+          unsubscribeChat.current = onSnapshot(chatDocRef, (docSnapshot) => {
+            if (docSnapshot.exists()) {
+              const data = docSnapshot.data();
+              setUnreadCount(data.unreadCount?.[currentUserId] || 0);
+              if (firstLoad && data.unreadCount?.[currentUserId] > 0) {
+                updateDoc(chatDocRef, { [`unreadCount.${currentUserId}`]: 0 }, { merge: true });
+                firstLoad = false;
               }
             }
-            const verifiedChatDoc = await getDoc(chatDocRef);
-            if (!verifiedChatDoc.exists() || !verifiedChatDoc.data().participants.includes(currentUserId)) {
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              await createAndVerifyChat(attempt + 1);
-              return;
-            }
-          } catch (error) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            await createAndVerifyChat(attempt + 1);
-          }
-        };
-        await createAndVerifyChat();
+          });
+        } catch {
+          await new Promise(r => setTimeout(r, 2000));
+          await attachChatListeners(attempt + 1);
+        }
+      };
 
-        const attachListeners = async (attempt = 0) => {
-          if (attempt > 3) return;
-          try {
-            const docSnap = await getDoc(chatDocRef);
-            if (docSnap.exists() && docSnap.data().participants.includes(currentUserId)) {
-              unsubscribeMessages.current = onSnapshot(collection(db, 'chats', chatId, 'messages'), (snapshot) => {
-                const msgList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                const sortedMessages = msgList.sort((a, b) => a.timestamp - b.timestamp);
-                setMessages(sortedMessages);
-                if (sortedMessages.length > 0 && sortedMessages[sortedMessages.length - 1].senderId !== currentUserId && !modalVisible) {
-                  const newCount = unreadCount + 1;
-                  updateDoc(chatDocRef, { [`unreadCount.${currentUserId}`]: newCount, lastMessage: sortedMessages[sortedMessages.length - 1].text }, { merge: true });
-                }
-              }, (error) => console.error('Message listen error for user:', currentUserId, error));
+      await attachChatListeners();
 
-              unsubscribeChat.current = onSnapshot(chatDocRef, (docSnapshot) => {
-                if (docSnapshot.exists()) {
-                  const data = docSnapshot.data();
-                  setUnreadCount(data.unreadCount?.[currentUserId] || 0);
-                  if (firstLoad && data.unreadCount?.[currentUserId] > 0) {
-                    updateDoc(chatDocRef, { [`unreadCount.${currentUserId}`]: 0 }, { merge: true });
-                    firstLoad = false;
-                  }
-                }
-              }, (error) => console.error('Chat doc listen error for user:', currentUserId, error));
-            } else {
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              await attachListeners(attempt + 1);
-            }
-          } catch (error) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            await attachListeners(attempt + 1);
-          }
-        };
-        await attachListeners();
+      // Location listeners
+      unsubscribeLocationA.current = onSnapshot(doc(db, 'users', userAId), (docSnapshot) => {
+        const data = docSnapshot.data();
+        if (data?.location) {
+          setUserALocation(data.location);
+          console.log(`📍 userA Location updated: ${data.location.latitude}, ${data.location.longitude}`);
+        }
+      });
 
-        unsubscribeLocationA.current = onSnapshot(doc(db, 'users', userAId), (docSnapshot) => {
-          if (docSnapshot.exists()) {
-            const data = docSnapshot.data();
-            if (data.location) {
-              setUserALocation(data.location);
-              console.log(`📍 userA Location updated: ${data.location.latitude}, ${data.location.longitude}`);
-            }
-          }
-        }, (error) => console.error('Location A listener error:', error));
+      unsubscribeLocationB.current = onSnapshot(doc(db, 'users', userBId), (docSnapshot) => {
+        const data = docSnapshot.data();
+        if (data?.location) {
+          setUserBLocation(data.location);
+          console.log(`📍 userB Location updated: ${data.location.latitude}, ${data.location.longitude}`);
+        }
+      });
 
-        unsubscribeLocationB.current = onSnapshot(doc(db, 'users', userBId), (docSnapshot) => {
-          if (docSnapshot.exists()) {
-            const data = docSnapshot.data();
-            if (data.location) {
-              setUserBLocation(data.location);
-              console.log(`📍 userB Location updated: ${data.location.latitude}, ${data.location.longitude}`);
-            }
-          }
-        }, (error) => console.error('Location B listener error:', error));
+    } catch (err) {
+      console.error('❌ Error in NicAssistScreen useEffect:', err.message, err.stack);
+    }
+  };
 
-      } catch (err) {
-        console.error('Error in NicAssistScreen initialization for user:', currentUserId, err.message, err.stack);
-      }
-    };
+  init();
 
-    init();
+  return () => {
+    if (unsubscribeSession.current) unsubscribeSession.current();
+    if (unsubscribeMessages.current) unsubscribeMessages.current();
+    if (unsubscribeChat.current) unsubscribeChat.current();
+    if (unsubscribeLocationA.current) unsubscribeLocationA.current();
+    if (unsubscribeLocationB.current) unsubscribeLocationB.current();
+    hasNavigatedRef.current = false;
+    setShowAlert(false);
+  };
+}, [userAId, userBId, sessionId, currentUserId]);
 
+
+useFocusEffect(
+  useCallback(() => {
     return () => {
       if (unsubscribeSession.current) unsubscribeSession.current();
       if (unsubscribeMessages.current) unsubscribeMessages.current();
       if (unsubscribeChat.current) unsubscribeChat.current();
       if (unsubscribeLocationA.current) unsubscribeLocationA.current();
       if (unsubscribeLocationB.current) unsubscribeLocationB.current();
+
       hasNavigatedRef.current = false;
       setShowAlert(false);
-      if (lastActiveIntervalRef.current) {
-        clearInterval(lastActiveIntervalRef.current);
-        lastActiveIntervalRef.current = null;
-        console.log(`🧹 Cleared lastActiveInterval for ${currentUserId}`);
+
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+        console.log(`🧹 Cleared heartbeat interval in useFocusEffect for ${currentUserId}`);
       }
     };
-  }, [userAId, userBId, sessionId, currentUserId]);
+  }, [])
+);
 
-  useFocusEffect(
-    useCallback(() => {
-      return () => {
-        if (unsubscribeSession.current) unsubscribeSession.current();
-        if (unsubscribeMessages.current) unsubscribeMessages.current();
-        if (unsubscribeChat.current) unsubscribeChat.current();
-        if (unsubscribeLocationA.current) unsubscribeLocationA.current();
-        if (unsubscribeLocationB.current) unsubscribeLocationB.current();
-        hasNavigatedRef.current = false;
-        setShowAlert(false);
-        if (lastActiveIntervalRef.current) {
-          clearInterval(lastActiveIntervalRef.current);
-          lastActiveIntervalRef.current = null;
-          console.log(`🧹 Cleared lastActiveInterval in useFocusEffect for ${currentUserId}`);
-        }
-      };
-    }, [])
-  );
 
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
@@ -409,12 +424,13 @@ export default function NicAssistScreen() {
   };
 
 const handleCancel = async () => {
-  console.log(`❌ cancel by ${currentUserId}`)
+  console.log(`❌ Canceled ${currentUserId}`);
   try {
     const userADocRef = doc(db, 'users', userAId);
     const userBDocRef = doc(db, 'users', userBId);
+    const sessionRef = doc(db, 'nicSessions', sessionIdRef.current);
 
-    // Unsubscribe all location and session listeners
+    // Clean up listeners
     if (unsubscribeLocationA.current) {
       unsubscribeLocationA.current();
       console.log(`🧹 Unsubscribed location listener for userA (${userAId}) on cancel`);
@@ -425,26 +441,31 @@ const handleCancel = async () => {
     }
     if (unsubscribeSession.current) {
       unsubscribeSession.current();
-      console.log(`🧹 Unsubscribed session listener for ${currentUserId} on cancel`);
+      console.log(`🧹 Unsubscribed session listener on cancel`);
     }
-    if (lastActiveIntervalRef.current) {
-      clearInterval(lastActiveIntervalRef.current);
-      lastActiveIntervalRef.current = null;
-      console.log(`🧹 Cleared lastActiveInterval for ${currentUserId} on cancel`);
+    if (heartbeatIntervalRef.current) {
+      console.log("🕒 heartbeatIntervalRef before cancel:", heartbeatIntervalRef.current);
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+      console.log(`🧹 Cleared heartbeat interval for ${currentUserId} on cancel`);
     }
 
+
+    // Fetch latest user data
     const userAData = (await getDoc(userADocRef)).data();
     const userBData = (await getDoc(userBDocRef)).data();
+
     if (isUserA) {
+      // User A cancels
       await updateDoc(userADocRef, {
         NicMeUp: {
           ...userAData?.NicMeUp || {},
-          lastActive: null,
           nicQuestAssistedBy: null,
           showAlert: false,
           sessionId: ""
         }
       }, { merge: true });
+
       await updateDoc(userBDocRef, {
         NicMeUp: {
           ...userBData?.NicMeUp || {},
@@ -453,16 +474,18 @@ const handleCancel = async () => {
           sessionId: sessionIdRef.current
         }
       }, { merge: true });
+
     } else {
+      // User B cancels
       await updateDoc(userBDocRef, {
         NicMeUp: {
           ...userBData?.NicMeUp || {},
-          lastActive: null,
           nicAssistResponse: null,
           showAlert: false,
           sessionId: ""
         }
       }, { merge: true });
+
       await updateDoc(userADocRef, {
         NicMeUp: {
           ...userAData?.NicMeUp || {},
@@ -472,29 +495,48 @@ const handleCancel = async () => {
         }
       }, { merge: true });
     }
+
+    // Mark the session inactive
+    await updateDoc(sessionRef, {
+      active: false,
+      updatedAt: new Date()
+    });
+
     navigation.navigate('Tabs', { screen: 'Home' });
+
   } catch (error) {
-    console.error('Error cancelling:', error);
+    console.error('❌ Error cancelling NicQuest session:', error);
   }
 };
 
-  const handleAlertOk = async () => {
-    console.log(`🟦 Alert OK pressed ${currentUserId}`)
+
+const handleAlertOk = async () => {
+  try {
+    console.log(`🟦 Alert OK ${currentUserId}`);
+
     const currentUserRef = doc(db, 'users', currentUserId);
     const currentUserDoc = await getDoc(currentUserRef);
     const currentUserData = currentUserDoc.data();
+
+    // Cleanup NicMeUp fields
     await updateDoc(currentUserRef, {
       NicMeUp: {
         ...currentUserData?.NicMeUp || {},
-        lastActive: null,
         showAlert: false,
         sessionId: ""
       }
     }, { merge: true });
+
     setModalVisible(false);
+    setAlertShown(false); // Reset alertShown after OK
     navigation.navigate('Tabs', { screen: 'Home' });
     hasNavigatedRef.current = true;
-  };
+
+  } catch (error) {
+    console.error('❌ handleAlertOk error:', error);
+  }
+};
+
 
   useEffect(() => {
     if (modalVisible && flatListRef.current) {

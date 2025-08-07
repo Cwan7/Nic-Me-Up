@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { db } from '../firebase';
-import { collection, onSnapshot, query, where, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { db, auth } from '../firebase';
+import { doc, onSnapshot, updateDoc, deleteDoc } from 'firebase/firestore';
 
 export default function NicQuestWaitingScreen({ route }) {
   const { userId, questDistance, sessionId, nicAssistLat, nicAssistLng } = route.params;
@@ -12,39 +12,34 @@ export default function NicQuestWaitingScreen({ route }) {
   const hasNavigatedRef = useRef(false);
 
   useEffect(() => {
-    if (!unsubscribeRef.current) {
-      const q = query(collection(db, 'users'), where('NicMeUp.nicAssistResponse', '==', userId));
-      const unsubscribe = onSnapshot(q, async (snapshot) => {
-        const hasAssister = snapshot.docs.length > 0;
-        setWaiting(!hasAssister);
-        if (hasAssister && !hasNavigatedRef.current) {
-          console.log('Assister found, navigating to NicAssistScreen');
-          const userBId = snapshot.docs[0].id;
-          const userADocRef = doc(db, 'users', userId);
-          const userADoc = await getDoc(userADocRef);
-          const userAData = userADoc.data();
-          await updateDoc(userADocRef, {
-            NicMeUp: {
-              ...userAData?.NicMeUp,
-              sessionId: sessionId
-            }
-          }, { merge: true });
-          setTimeout(() => {
-            navigation.navigate('NicAssist', { 
-              userAId: userId, 
-              userBId, 
-              sessionId,
-              nicAssistLat: route.params.nicAssistLat,
-              nicAssistLng: route.params.nicAssistLng,
-            });
-          }, 100); // Delay to stabilize navigation
+    const sessionRef = doc(db, 'nicSessions', sessionId);
+
+    unsubscribeRef.current = onSnapshot(sessionRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const session = docSnap.data();
+        if (session.userBId && !hasNavigatedRef.current) {
+          console.log('✅ userB accepted NicQuest — navigating to NicAssistScreen');
           hasNavigatedRef.current = true;
+
+          navigation.navigate('NicAssist', {
+            userAId: session.userAId,
+            userBId: session.userBId,
+            sessionId: session.sessionId,
+            nicAssistLat: session.nicAssistLat,
+            nicAssistLng: session.nicAssistLng,
+            isGroup2: session.isGroup2
+          });
         }
-      }, (error) => {
-        console.error('Snapshot error:', error);
-      });
-      unsubscribeRef.current = unsubscribe;
-    }
+      } else {
+        console.log('⚠️ Session document deleted (possibly canceled)');
+        if (!hasNavigatedRef.current) {
+          Alert.alert('Session Canceled', 'Your NicQuest was canceled or expired.');
+          navigation.navigate('Tabs', { screen: 'Home' });
+        }
+      }
+    }, (error) => {
+      console.error('Error listening to session:', error);
+    });
 
     return () => {
       if (unsubscribeRef.current) {
@@ -53,31 +48,50 @@ export default function NicQuestWaitingScreen({ route }) {
         hasNavigatedRef.current = false;
       }
     };
-  }, [userId, sessionId, navigation, nicAssistLat, nicAssistLng]);
+  }, [sessionId, navigation]);
+useEffect(() => {
+  const userDocRef = doc(db, 'users', auth.currentUser.uid);
+
+  const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+    const data = docSnap.data();
+    const nicMeUp = data?.NicMeUp;
+
+    if (nicMeUp?.nicQuestAssistedBy && nicMeUp?.sessionId) {
+      console.log('🚀 NicQuest assisted by:', nicMeUp.nicQuestAssistedBy);
+      navigation.navigate('NicAssist', {
+        userAId: auth.currentUser.uid,
+        userBId: nicMeUp.nicQuestAssistedBy,
+        sessionId: nicMeUp.sessionId,
+        nicAssistLat: null, // fallback if userA doesn’t need to see userB's location yet
+        nicAssistLng: null,
+        isGroup2: false, // update if needed
+      });
+    }
+  });
+
+  return () => unsubscribe();
+}, []);
 
   const handleCancel = async () => {
     try {
-      const userADocRef = doc(db, 'users', userId);
-      const userADoc = await getDoc(userADocRef);
-      const userAData = userADoc.data();
-      await updateDoc(userADocRef, {
-        NicMeUp: {
-          ...userAData?.NicMeUp,
-          nicQuestAssistedBy: null,
-          sessionId: ""
-        }
+      console.log('🛑 NicQuest canceled by userA');
+      // Delete the session
+      await deleteDoc(doc(db, 'nicSessions', sessionId));
+
+      // Optionally clear NicMeUp.sessionId for this user
+      await updateDoc(doc(db, 'users', userId), {
+        'NicMeUp.sessionId': ''
       }, { merge: true });
+
       navigation.navigate('Tabs', { screen: 'Home' });
-      hasNavigatedRef.current = false;
     } catch (error) {
-      console.error('Error cancelling NicQuest:', error);
+      console.error('Error canceling NicQuest:', error);
     }
   };
-
   const handleUpdate = () => {
     navigation.navigate('Settings');
   };
-
+  
   return (
     <View style={styles.container}>
       <Image source={require('../assets/Logo3.png')} style={styles.logo} resizeMode='contain' />

@@ -268,8 +268,13 @@ const handleModalAction = async (action) => {
             ...userADataCopy?.NicMeUp,
             nicQuestAssistedBy: auth.currentUser.uid
           }
+          
         }, { merge: true });
 
+        await updateDoc(doc(db, "nicSessions", sessionId), {
+          userBId: auth.currentUser.uid,
+        });
+        
         console.log(`✅ NicAssist selected for user ${notification?.userId}`);
         hasNavigated.current = true;
         navigationRef.current?.navigate('NicAssist', {
