@@ -74,6 +74,9 @@ export default function NicAssistScreen() {
   const [nicAssistLng, setNicAssistLng] = useState(initialNicAssistLng);
   const [alertShown, setAlertShown] = useState(false);
   const heartbeatIntervalRef = useRef(null);
+  const [showCompletionPrompt, setShowCompletionPrompt] = useState(false);
+  const proximityTimerRef = useRef(null);
+
 
   const userADocRef = doc(db, 'users', userAId);
   const userADoc = useRef(null);
@@ -99,18 +102,78 @@ const startHeartbeat = (sessionId, userRole) => {
     console.log("🆕 Heartbeat interval set for", currentUserId);
   }, 10000); 
 };
-//30 second heatbeat when NAS mounts  
+
+const handleCompletion = async () => {
+  console.log(`✅ Completed Button pressed ${currentUserId}`);
+  try {
+    const sessionRef = doc(db, 'nicSessions', sessionIdRef.current);
+
+    // Mark session completed
+    await updateDoc(sessionRef, {
+      status: 'completed',
+      completedBy: currentUserId,
+      completedAt: serverTimestamp(),
+      active: false
+    });
+
+    // Cleanup NicMeUp fields for both users
+    const userARef = doc(db, 'users', userAId);
+    const userBRef = doc(db, 'users', userBId);
+
+    const nicMeUpDefaults = {
+      'NicMeUp.nicAssistResponse': null,
+      'NicMeUp.nicQuestAssistedBy': null,
+      'NicMeUp.sessionId': '',
+      'NicMeUp.showAlert': false
+    };
+
+    await Promise.all([
+      updateDoc(userARef, nicMeUpDefaults),
+      updateDoc(userBRef, nicMeUpDefaults)
+    ]);
+
+    // Local cleanup
+    if (unsubscribeLocationA.current) unsubscribeLocationA.current();
+    if (unsubscribeLocationB.current) unsubscribeLocationB.current();
+    if (unsubscribeSession.current) unsubscribeSession.current();
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+
+    navigation.navigate('Tabs', { screen: 'Home' });
+  } catch (error) {
+    console.error('Error completing session:', error);
+  }
+};
+
+
 useEffect(() => {
   if (!sessionId || !userAId || !userBId || !currentUserId) return;
 
   const userRole = currentUserId === userAId ? 'userA' : 'userB';
   const intervalId = startHeartbeat(sessionId, userRole);
 
+  // Listen for session becoming inactive
+  const sessionRef = doc(db, 'nicSessions', sessionId);
+  const unsubSession = onSnapshot(sessionRef, (snapshot) => {
+    if (snapshot.exists()) {
+      const data = snapshot.data();
+      if (data.active === false) {
+        console.log("🛑 Session inactive — stopping heartbeat");
+        clearInterval(intervalId);
+        heartbeatIntervalRef.current = null;
+      }
+    }
+  });
+
   return () => {
     clearInterval(intervalId);
-    console.log('🧹 Cleaned up heartbeat tracking on unmount');
+    unsubSession();
+    console.log('🧹 Cleaned up heartbeat tracking & session listener on unmount');
   };
 }, [sessionId, userAId, userBId, currentUserId]);
+
 
   useEffect(() => {
     if (isGroup2 && userBLocation?.latitude && userBLocation?.longitude) {
@@ -127,86 +190,88 @@ useEffect(() => {
 
   const PROXIMITY_THRESHOLD = 3;
 
-  const checkProximityAndUpdate = useCallback(async () => {
-    console.log("🛠️ userALocation before proximity check:", userALocation);
-    console.log("🛠️ userBLocation before proximity check:", userBLocation);
-    if (
-      !userAId ||
-      !userBId ||
-      !sessionId ||
-      !isValidLocation(userALocation) ||
-      !isValidLocation(userBLocation) ||
-      hasLoggedActivityRef.current ||
-      isCheckingRef.current ||
-      userAId === userBId
-    ) {
-      console.log("⛔ Proximity check skipped:", {
-        userAId, userBId, sessionId, userALocation, userBLocation,
-        hasLoggedActivityRef: hasLoggedActivityRef.current,
-        isCheckingRef: isCheckingRef.current,
-        userAIdEqualsUserBId: userAId === userBId
-      });
-      return;
-    }
+const checkProximityAndUpdate = useCallback(async () => {
+  if (
+    !userAId ||
+    !userBId ||
+    !sessionId ||
+    !isValidLocation(userALocation) ||
+    !isValidLocation(userBLocation) ||
+    hasLoggedActivityRef.current ||
+    isCheckingRef.current ||
+    userAId === userBId
+  ) {
+    console.log("⛔ Proximity check skipped:")
+    return;
+  }
 
-    isCheckingRef.current = true;
-    const latA = userALocation.latitude;
-    const lngA = userALocation.longitude;
-    const latB = userBLocation.latitude;
-    const lngB = userBLocation.longitude;
+  isCheckingRef.current = true;
+  const latA = userALocation.latitude;
+  const lngA = userALocation.longitude;
+  const latB = userBLocation.latitude;
+  const lngB = userBLocation.longitude;
 
-    if (latA === latB && lngA === lngB) {
-      console.log("❌ Skipping proximity logging — locations are identical");
-      isCheckingRef.current = false;
-      return;
-    }
-
-    const distance = getDistance(
-      { latitude: parseFloat(latA), longitude: parseFloat(lngA) },
-      { latitude: parseFloat(latB), longitude: parseFloat(lngB) }
-    );
-    console.log(`📏 Calculated distance: ${distance.toFixed(2)} meters between ${userAId} and ${userBId}`);
-    console.log('🔍 Comparing locations:', { userA: userALocation, userB: userBLocation });
-
-    if (distance <= PROXIMITY_THRESHOLD) {
-      console.log(`📏 Users are within ${PROXIMITY_THRESHOLD} meters!`);
-      hasLoggedActivityRef.current = true;
-
-      const activityEntry = { userAId, userBId, sessionId, timestamp: Date.now() };
-
-      const recentActivitiesRef = doc(db, 'recentActivities', 'allActivities');
-      const currentUserRef = doc(db, 'users', currentUserId);
-
-      try {
-        const recentSnap = await getDoc(recentActivitiesRef);
-        const existing = recentSnap.exists() ? recentSnap.data().activities || [] : [];
-        const recentHasSession = existing.some((a) => a.sessionId === sessionId);
-
-        if (!recentHasSession) {
-          await updateDoc(recentActivitiesRef, { activities: [activityEntry, ...existing] });
-          console.log(`✅ Logged recent activity to Firestore with threshold ${PROXIMITY_THRESHOLD} meters`);
-        } else {
-          console.log('⚠️ Session already in recentActivities, skipping');
-        }
-
-        const currentUserSnap = await getDoc(currentUserRef);
-        const currentUserActivities = currentUserSnap.exists() ? currentUserSnap.data().yourActivity || [] : [];
-        const currentUserHasSession = currentUserActivities.some((a) => a.sessionId === sessionId);
-
-        if (!currentUserHasSession) {
-          await updateDoc(currentUserRef, { yourActivity: arrayUnion(activityEntry) });
-          console.log(`✅ Added activity to ${currentUserId}`);
-        } else {
-          console.log(`⚠️ Session already exists for ${currentUserId}, skipping`);
-        }
-      } catch (err) {
-        console.error('🔥 Proximity log error:', err);
-      }
-    } else {
-      console.log(`⚠️ Users are beyond ${PROXIMITY_THRESHOLD} meters, no action taken`);
-    }
+  if (latA === latB && lngA === lngB) {
+    console.log("❌ Skipping proximity logging — locations are identical");
     isCheckingRef.current = false;
-  }, [userAId, userBId, sessionId, userALocation, userBLocation, currentUserId]);
+    return;
+  }
+
+  const distance = getDistance(
+    { latitude: parseFloat(latA), longitude: parseFloat(lngA) },
+    { latitude: parseFloat(latB), longitude: parseFloat(lngB) }
+  );
+  console.log(`📏 Calculated distance: ${distance.toFixed(2)} meters between ${userAId} and ${userBId}`);
+
+  // === New 5-second completion prompt logic ===
+  if (distance <= 3) {
+    if (!proximityTimerRef.current) {
+      console.log("⏳ Within 3m — starting 5s completion timer...");
+      proximityTimerRef.current = setTimeout(() => {
+        setShowCompletionPrompt(true); // this changes detailsContainer UI
+        console.log("✅ 5s hold met — showing completion prompt");
+      }, 5000);
+    }
+  } 
+
+  // === Existing logging logic ===
+  if (distance <= PROXIMITY_THRESHOLD) {
+    console.log(`📏 Users are within ${PROXIMITY_THRESHOLD} meters!`);
+    hasLoggedActivityRef.current = true;
+
+    const activityEntry = { userAId, userBId, sessionId, timestamp: Date.now() };
+
+    const recentActivitiesRef = doc(db, 'recentActivities', 'allActivities');
+    const currentUserRef = doc(db, 'users', currentUserId);
+
+    try {
+      const recentSnap = await getDoc(recentActivitiesRef);
+      const existing = recentSnap.exists() ? recentSnap.data().activities || [] : [];
+      const recentHasSession = existing.some((a) => a.sessionId === sessionId);
+
+      if (!recentHasSession) {
+        await updateDoc(recentActivitiesRef, { activities: [activityEntry, ...existing] });
+        console.log(`✅ Logged recent activity to Firestore with threshold ${PROXIMITY_THRESHOLD} meters`);
+      } else {
+        console.log('⚠️ Session already in recentActivities, skipping');
+      }
+
+      const currentUserSnap = await getDoc(currentUserRef);
+      const currentUserActivities = currentUserSnap.exists() ? currentUserSnap.data().yourActivity || [] : [];
+      const currentUserHasSession = currentUserActivities.some((a) => a.sessionId === sessionId);
+
+      if (!currentUserHasSession) {
+        await updateDoc(currentUserRef, { yourActivity: arrayUnion(activityEntry) });
+        console.log(`✅ Added activity to ${currentUserId}`);
+      } else {
+        console.log(`⚠️ Session already exists for ${currentUserId}, skipping`);
+      }
+    } catch (err) {
+      console.error('🔥 Proximity log error:', err);
+    }
+  }
+  isCheckingRef.current = false;
+}, [userAId, userBId, sessionId, userALocation, userBLocation, currentUserId, showCompletionPrompt]);
 
   useEffect(() => {
     if (userALocation?.latitude && userBLocation?.latitude) {
@@ -596,18 +661,35 @@ const handleAlertOk = async () => {
               </View>
             </TouchableOpacity>
             <View style={styles.detailsContainer}>
-              <Text style={styles.infoHeader}>{userBData.username || 'User'}’s Info</Text>
-              <View style={styles.data}>
-                <View>
-                  <Text style={styles.detail}>Pouch Type: <Text style={styles.detailValue}>{userBData.pouchType || 'N/A'}</Text></Text>
-                  <Text style={styles.detail}>Strength: <Text style={styles.detailValue}>{userBData.strength || 'N/A'}</Text></Text>
-                </View>
-                <View>
-                  <Text style={styles.detail}>Flavors: <Text style={styles.detailValue}>{userBData.flavors || 'N/A'}</Text></Text>
-                  <Text style={styles.detail}>Notes: <Text style={styles.detailValue}>{userBData.notes || 'N/A'}</Text></Text>
-                </View>
-              </View>
+              {showCompletionPrompt ? (
+                <>
+                  <Text style={styles.completedHeader}>
+                    {currentUserId === userAId ? 'NicQuest Completed?' : 'NicAssist Completed?'}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.completedButton}
+                    onPress={handleCompletion}
+                  >
+                    <Text style={styles.completedText}>Yes</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.infoHeader}>{userBData.username || 'User'}’s Info</Text>
+                  <View style={styles.data}>
+                    <View>
+                      <Text style={styles.detail}>Pouch Type: <Text style={styles.detailValue}>{userBData.pouchType || 'N/A'}</Text></Text>
+                      <Text style={styles.detail}>Strength: <Text style={styles.detailValue}>{userBData.strength || 'N/A'}</Text></Text>
+                    </View>
+                    <View>
+                      <Text style={styles.detail}>Flavors: <Text style={styles.detailValue}>{userBData.flavors || 'N/A'}</Text></Text>
+                      <Text style={styles.detail}>Notes: <Text style={styles.detailValue}>{userBData.notes || 'N/A'}</Text></Text>
+                    </View>
+                  </View>
+                </>
+              )}
             </View>
+
           </View>
           {isValidLocation(userALocation) && isValidLocation(userBLocation) && (
             <MapView
@@ -759,4 +841,7 @@ const styles = StyleSheet.create({
   sendButton: { backgroundColor: '#60a8b8', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, marginLeft: 10 },
   sendButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#ccc', width: '100%', alignSelf: 'stretch' },
+  completedButton: { marginTop: 12, alignSelf: 'center', width: '80%', borderRadius: 8, paddingVertical: 12, alignItems: 'center', backgroundColor: '#76BD6F', borderBottomWidth: 2, borderBottomColor: '#1C5916' },
+  completedText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  completedHeader: { fontSize: 16, fontWeight: '700', color: '#2b2b2b', marginBottom: 10, },
 });

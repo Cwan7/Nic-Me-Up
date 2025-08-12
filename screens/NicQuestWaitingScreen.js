@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from '../firebase';
-import { doc, onSnapshot, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, serverTimestamp} from 'firebase/firestore';
 
 export default function NicQuestWaitingScreen({ route }) {
   const { userId, questDistance, sessionId, nicAssistLat, nicAssistLng } = route.params;
@@ -76,9 +76,12 @@ useEffect(() => {
     try {
       console.log('🛑 NicQuest canceled by userA');
       // Delete the session
-      await deleteDoc(doc(db, 'nicSessions', sessionId));
+      await updateDoc(doc(db, 'nicSessions', sessionId), {
+        active: false,
+        canceledBy: userId,
+        canceledAt: serverTimestamp()
+      });
 
-      // Optionally clear NicMeUp.sessionId for this user
       await updateDoc(doc(db, 'users', userId), {
         'NicMeUp.sessionId': ''
       }, { merge: true });
@@ -88,8 +91,17 @@ useEffect(() => {
       console.error('Error canceling NicQuest:', error);
     }
   };
-  const handleUpdate = () => {
-    navigation.navigate('Settings');
+
+  const handleUpdate = async () => {
+     await updateDoc(doc(db, 'nicSessions', sessionId), {
+        active: false,
+        canceledBy: userId,
+        canceledAt: serverTimestamp()
+      });
+      await updateDoc(doc(db, 'users', userId), {
+        'NicMeUp.sessionId': ''
+      }, { merge: true });
+    navigation.navigate('Tabs', { screen: 'Settings' });
   };
   
   return (

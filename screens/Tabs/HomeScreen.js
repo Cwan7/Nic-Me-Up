@@ -279,7 +279,6 @@ export default function HomeScreen({ route }) {
                   longitude: newLocation.longitude,
                   ...regionRef.current,
                 });
-                console.log('🌐 Region initialized:', newLocation);
               }
             }
           }, (error) => {

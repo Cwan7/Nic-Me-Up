@@ -20,7 +20,6 @@ async function performCleanup() {
 
     // Update user's own doc to clear all specified fields
     updates.push(doc.ref.update({
-      "NicMeUp.lastActive": null,
       "NicMeUp.nicAssistResponse": null,
       "NicMeUp.nicQuestAssistedBy": null,
       "NicMeUp.sessionId": "",

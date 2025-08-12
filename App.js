@@ -1,5 +1,5 @@
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, query, collection, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
@@ -99,7 +99,7 @@ export default function App() {
       if (granted) {
         const initialLoc = Device.isDevice
           ? await Location.getCurrentPositionAsync({})
-          : { coords: { latitude: 39.7412777, longitude: -104.9705779, timestamp: new Date().toISOString() } };
+          : { coords: { latitude: 39.74053877190388, longitude: -104.970766737421, timestamp: new Date().toISOString() } };
 
         await setDoc(userDocRef, {
           location: {
@@ -195,7 +195,6 @@ export default function App() {
         const { data } = notification.request.content;
         if (data?.type === 'NicQuest' && data.userId !== auth.currentUser?.uid) {
           const timestamp = new Date().toISOString();
-          console.log(`[${timestamp}] Handling NicQuest on ${Device.isDevice ? 'Phone' : 'Simulator'} for userId:`, data.userId, 'Notification Data:', data);
           if (Device.isDevice) {
             setNotification(data);
             setIsModalVisible(true);
@@ -229,72 +228,135 @@ export default function App() {
   }, []);
 
 const handleModalAction = async (action) => {
-  console.log('handleModalAction called with action:', action);
+  console.log(`handleModalAction called with action: ${action} by ${auth.currentUser?.uid}`);
+
   if (action === 'NicAssist' && !hasNavigated.current) {
-    const userADocRef = doc(db, 'users', notification.userId);
-    const userADoc = await getDoc(userADocRef);
-    const userAData = userADoc.data();
-    console.log('UserA data:', userAData);
+    try {
+      // 1) load userA doc (the requester)
+      const userADocRef = doc(db, 'users', notification.userId);
+      const userADocSnap = await getDoc(userADocRef);
+      const userAData = userADocSnap.exists() ? userADocSnap.data() : null;
 
-    if (userAData?.NicMeUp?.nicQuestAssistedBy) {
-      Alert.alert('NicQuest Already Assisted!', 'This NicQuest has already been assisted by another user.');
-    } else {
-      try {
-        const sessionId = userAData?.NicMeUp?.sessionId;
-        if (!sessionId) {
-          console.error('❌ Could not retrieve sessionId from userA.NicMeUp');
-          return;
+      // already assisted?
+      if (userAData?.NicMeUp?.nicQuestAssistedBy) {
+        Alert.alert('NicQuest Already Assisted!', 'This NicQuest has already been assisted by another user.',
+          [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
+        );
+        return;
+      }
+
+      // 2) Try get sessionId from notification payload first (best)
+      let sessionId = notification?.sessionId || notification?.data?.sessionId;
+
+      // 3) If not found, try from userA doc
+      if (!sessionId) {
+        sessionId = userAData?.NicMeUp?.sessionId;
+      }
+
+      // 4) Fallback: search nicSessions for an active session owned by userA
+      if (!sessionId) {
+        console.log('No sessionId in notification or userA doc — searching nicSessions for active session...');
+        const sessionsQ = query(
+          collection(db, 'nicSessions'),
+          where('userAId', '==', notification.userId),
+          where('active', '==', true)
+        );
+        const sessionsSnap = await getDocs(sessionsQ);
+        if (!sessionsSnap.empty) {
+          // pick the most recent (first) doc
+          const found = sessionsSnap.docs[0];
+          sessionId = found.id || found.data()?.sessionId;
+          console.log('Found fallback sessionId from nicSessions:', sessionId);
         }
+      }
 
-        const nicAssistLat = notification.nicAssistLat;
-        const nicAssistLng = notification.nicAssistLng;
-        if (!nicAssistLat || !nicAssistLng) {
-          console.error('❌ Could not retrieve nicAssistLat or nicAssistLng from notification');
-          return;
+      if (!sessionId) {
+        Alert.alert('NicQuest Unavailable', 'This NicQuest is no longer available.',
+          [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
+        );
+        return;
+      }
+
+      // 5) Verify the session doc is active before proceeding
+      const sessionRef = doc(db, 'nicSessions', sessionId);
+      const sessionSnap = await getDoc(sessionRef);
+      if (!sessionSnap.exists() || sessionSnap.data().active === false) {
+        Alert.alert('NicQuest Unavailable', 'This NicQuest has been canceled or completed.',
+          [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
+        );
+        return;
+      }
+
+      // 6) Ensure we have lat/lng (from notification or fallback)
+      const nicAssistLat = notification.nicAssistLat ?? notification.data?.nicAssistLat;
+      const nicAssistLng = notification.nicAssistLng ?? notification.data?.nicAssistLng;
+      if (nicAssistLat == null || nicAssistLng == null) {
+        console.error('❌ Could not retrieve nicAssistLat or nicAssistLng from notification');
+        Alert.alert('Missing data', 'Unable to get location for this NicQuest.',
+          [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
+        );
+        return;
+      }
+
+      // 7) Claim the session: update userB and userA NicMeUp and set session.userBId
+      const userBDocRef = doc(db, 'users', auth.currentUser.uid);
+      const userBDataSnap = await getDoc(userBDocRef);
+      const userBData = userBDataSnap.exists() ? userBDataSnap.data() : {};
+
+      // Set nicAssistResponse and the sessionId on B
+      await updateDoc(userBDocRef, {
+        NicMeUp: {
+          ...userBData?.NicMeUp,
+          nicAssistResponse: notification.userId,
+          sessionId: sessionId
         }
+      }, { merge: true });
 
-        const userBDocRef = doc(db, 'users', auth.currentUser.uid);
-        const userBData = (await getDoc(userBDocRef)).data();
-        await updateDoc(userBDocRef, {
-          NicMeUp: {
-            ...userBData?.NicMeUp,
-            nicAssistResponse: notification.userId
-          }
-        }, { merge: true });
-
-        const userADataCopy = userADoc.data();
+      // Update userA nicQuestAssistedBy (only if not already set)
+      const userADataLatestSnap = await getDoc(userADocRef);
+      const userADataLatest = userADataLatestSnap.exists() ? userADataLatestSnap.data() : {};
+      if (!userADataLatest?.NicMeUp?.nicQuestAssistedBy) {
         await updateDoc(userADocRef, {
           NicMeUp: {
-            ...userADataCopy?.NicMeUp,
+            ...userADataLatest?.NicMeUp,
             nicQuestAssistedBy: auth.currentUser.uid
           }
-          
         }, { merge: true });
-
-        await updateDoc(doc(db, "nicSessions", sessionId), {
-          userBId: auth.currentUser.uid,
-        });
-        
-        console.log(`✅ NicAssist selected for user ${notification?.userId}`);
-        hasNavigated.current = true;
-        navigationRef.current?.navigate('NicAssist', {
-          userAId: notification.userId,
-          userBId: auth.currentUser.uid,
-          sessionId,
-          nicAssistLat,
-          nicAssistLng,
-          isGroup2: notification.isGroup2 || false,
-        });
-      } catch (error) {
-        console.error('Error updating Firestore for NicAssist:', error);
       }
+
+      // Update session doc with userBId (note: for true atomicity use a transaction)
+      await updateDoc(sessionRef, {
+        userBId: auth.currentUser.uid,
+        updatedAt: serverTimestamp ? serverTimestamp() : new Date()
+      });
+
+      console.log(`✅ NicAssist selected for user ${notification?.userId} (session ${sessionId})`);
+
+      hasNavigated.current = true;
+      navigationRef.current?.navigate('NicAssist', {
+        userAId: notification.userId,
+        userBId: auth.currentUser.uid,
+        sessionId,
+        nicAssistLat,
+        nicAssistLng,
+        isGroup2: notification.isGroup2 || false,
+      });
+
+    } catch (error) {
+      console.error('Error updating Firestore for NicAssist:', error);
+      Alert.alert('Error', 'Could not join NicQuest. Try again.',
+        [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
+      );
     }
   } else if (action === 'Decline') {
     console.log(`❌ Decline NicQuest for user ${notification?.userId}`);
   }
+
   setIsModalVisible(false);
   if (action === 'NicAssist') hasNavigated.current = false;
 };
+
+
   return (
     <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
