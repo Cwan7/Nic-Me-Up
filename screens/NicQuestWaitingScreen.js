@@ -50,27 +50,31 @@ export default function NicQuestWaitingScreen({ route }) {
     };
   }, [sessionId, navigation]);
 useEffect(() => {
+  let hasNavigated = false;
   const userDocRef = doc(db, 'users', auth.currentUser.uid);
 
   const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
     const data = docSnap.data();
     const nicMeUp = data?.NicMeUp;
 
-    if (nicMeUp?.nicQuestAssistedBy && nicMeUp?.sessionId) {
+    if (!hasNavigated && nicMeUp?.nicQuestAssistedBy && nicMeUp?.sessionId) {
       console.log('🚀 NicQuest assisted by:', nicMeUp.nicQuestAssistedBy);
+      hasNavigated = true; // prevent future triggers
+      unsubscribe(); // stop listening once navigated
       navigation.navigate('NicAssist', {
         userAId: auth.currentUser.uid,
         userBId: nicMeUp.nicQuestAssistedBy,
         sessionId: nicMeUp.sessionId,
-        nicAssistLat: null, // fallback if userA doesn’t need to see userB's location yet
+        nicAssistLat: null,
         nicAssistLng: null,
-        isGroup2: false, // update if needed
+        isGroup2: false,
       });
     }
   });
 
   return () => unsubscribe();
 }, []);
+
 
   const handleCancel = async () => {
     try {
