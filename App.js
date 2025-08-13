@@ -21,6 +21,7 @@ import ProfileScreen from './screens/Tabs/ProfileScreen';
 import NicQuestWaitingScreen from './screens/NicQuestWaitingScreen';
 import NicAssistScreen from './screens/NicAssistScreen';
 
+
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
@@ -329,7 +330,17 @@ const handleModalAction = async (action) => {
         userBId: auth.currentUser.uid,
         updatedAt: serverTimestamp ? serverTimestamp() : new Date()
       });
+      const finalSessionSnap = await getDoc(sessionRef);
+      const finalSessionData = finalSessionSnap.exists() ? finalSessionSnap.data() : null;
 
+      if (!finalSessionData || finalSessionData.active === false) {
+        Alert.alert(
+          'NicQuest Unavailable',
+          'This NicQuest was canceled or completed while you were joining.',
+          [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
+        );
+        return; // stop navigation
+}
       console.log(`✅ NicAssist selected for user ${notification?.userId} (session ${sessionId})`);
 
       hasNavigated.current = true;

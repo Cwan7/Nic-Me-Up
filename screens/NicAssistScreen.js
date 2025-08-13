@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Alert, Dimensions, Modal, FlatList, TextInput, KeyboardAvoidingView, Keyboard } from 'react-native';
 import { db, auth } from '../firebase';
-import { doc, getDoc, updateDoc, onSnapshot, serverTimestamp, collection, addDoc, setDoc, arrayUnion, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, onSnapshot, serverTimestamp, collection, addDoc, setDoc, arrayUnion, increment, query, where, getDocs } from 'firebase/firestore';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import MapView, { Marker } from 'react-native-maps';
 import { MaterialIcons } from '@expo/vector-icons';
 import { getDistance } from 'geolib';
+import { AirbnbRating } from 'react-native-ratings';
+
 
 const CancelAlert = ({ visible, onOk, userId }) => {
   const [isVisible, setIsVisible] = useState(visible);
@@ -58,6 +60,7 @@ export default function NicAssistScreen() {
   const unsubscribeLocationA = useRef(null);
   const unsubscribeLocationB = useRef(null);
   const hasNavigatedRef = useRef(false);
+  const isMountedRef = useRef(true);
   const [showAlert, setShowAlert] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -76,6 +79,9 @@ export default function NicAssistScreen() {
   const heartbeatIntervalRef = useRef(null);
   const [showCompletionPrompt, setShowCompletionPrompt] = useState(false);
   const proximityTimerRef = useRef(null);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [rating, setRating] = useState(0)
+  const targetUserId = isUserA ? userBId : userAId;
 
 
   const userADocRef = doc(db, 'users', userAId);
@@ -102,6 +108,51 @@ const startHeartbeat = (sessionId, userRole) => {
     console.log("🆕 Heartbeat interval set for", currentUserId);
   }, 10000); 
 };
+
+async function submitRating(targetUserId, rating) {
+  try {
+    const userRef = doc(db, 'users', targetUserId);
+    const snap = await getDoc(userRef);
+
+    if (!snap.exists()) {
+      await setDoc(userRef, {
+        ratings: {
+          sum: rating,
+          count: 1,
+          average: rating
+        }
+      }, { merge: true });
+      return;
+    }
+    if (!snap.data().ratings) {
+      await updateDoc(userRef, {
+        ratings: {
+          sum: rating,
+          count: 1,
+          average: rating
+        }
+      });
+      return;
+    }
+    await updateDoc(userRef, {
+      'ratings.sum': increment(rating),
+      'ratings.count': increment(1)
+    });
+
+    // Get updated data to recalculate average
+    const updatedSnap = await getDoc(userRef);
+    const updatedRatings = updatedSnap.data().ratings || { sum: 0, count: 1 };
+    const avg = (updatedRatings.sum / updatedRatings.count).toFixed(2);
+
+    await updateDoc(userRef, {
+      'ratings.average': Number(avg)
+    });
+
+  } catch (error) {
+    console.error('Error submitting rating:', error);
+  }
+}
+
 
 const handleCompletion = async () => {
   console.log(`✅ Completed Button pressed ${currentUserId}`);
@@ -141,7 +192,7 @@ const handleCompletion = async () => {
       heartbeatIntervalRef.current = null;
     }
 
-    navigation.navigate('Tabs', { screen: 'Home' });
+    setShowRatingModal(true);
   } catch (error) {
     console.error('Error completing session:', error);
   }
@@ -191,6 +242,7 @@ useEffect(() => {
   const PROXIMITY_THRESHOLD = 3;
 
 const checkProximityAndUpdate = useCallback(async () => {
+  if (!isMountedRef.current) return;
   if (
     !userAId ||
     !userBId ||
@@ -273,13 +325,28 @@ const checkProximityAndUpdate = useCallback(async () => {
   isCheckingRef.current = false;
 }, [userAId, userBId, sessionId, userALocation, userBLocation, currentUserId, showCompletionPrompt]);
 
-  useEffect(() => {
-    if (userALocation?.latitude && userBLocation?.latitude) {
-      const timeoutId = setTimeout(() => checkProximityAndUpdate(), 500);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [checkProximityAndUpdate, userALocation, userBLocation]);
+useEffect(() => {
+  if (!isMountedRef.current) return; // skip if unmounted
+  if (userALocation?.latitude && userBLocation?.latitude) {
+    const timeoutId = setTimeout(() => {
+      if (isMountedRef.current) checkProximityAndUpdate();
+    }, 500);
+    return () => clearTimeout(timeoutId);
+  }
+}, [checkProximityAndUpdate, userALocation, userBLocation]);
 
+useEffect(() => {
+  isMountedRef.current = true;
+
+  return () => {
+    isMountedRef.current = false;
+    // Clear any pending 5-second proximity timers
+    if (proximityTimerRef.current) {
+      clearTimeout(proximityTimerRef.current);
+      proximityTimerRef.current = null;
+    }
+  };
+}, []);
 useEffect(() => {
   if (!userAId || !userBId || !currentUserId) return;
 
@@ -760,6 +827,78 @@ const handleAlertOk = async () => {
         <Text style={styles.buttonText}>{isUserA ? 'Cancel NicQuest' : 'Cancel NicAssist'}</Text>
       </TouchableOpacity>
       <CancelAlert visible={showAlert} onOk={handleAlertOk} userId={currentUserId} />
+      {/* Ratings Modal */}
+      <Modal
+        visible={showRatingModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowRatingModal(false)}
+      >
+        <View style={styles.ratingModalContainer}>
+          <View style={styles.ratingModalContent}>
+            <Text style={styles.ratingModalTitle}>
+              {currentUserId === userAId ? 'How was your NicQuest?' : 'How was your NicAssist?'}
+            </Text>
+
+            {(!isUserA ? userAData?.photoURL : userBData?.photoURL) ? (
+              <View style={styles.ratingOuterZynBorder}>
+                <View style={styles.ratingInnerWhiteBorder}>
+                  <Image
+                    source={{ uri: !isUserA ? userAData.photoURL : userBData.photoURL }}
+                    style={styles.ratingProfilePhoto}
+                    resizeMode="cover"
+                  />
+                </View>
+              </View>
+            ) : (
+              <View style={styles.ratingProfilePlaceholder}>
+                <Text style={styles.ratingPlaceholderText}>
+                  {(!isUserA ? userAData?.username : userBData?.username)?.[0]?.toUpperCase() || 'N'}
+                </Text>
+              </View>
+            )}
+
+            <View style={{ marginVertical: 20, width: '100%', alignItems: 'center' }}>
+              <AirbnbRating
+                count={5}
+                defaultRating={0}
+                size={30}
+                showRating={false}
+                onFinishRating={(rating) => setRating(rating)}
+              />
+            </View>  
+
+            <View style={styles.ratingButtonContainer}>
+              <TouchableOpacity
+                style={styles.ratingButtonDecline}
+                onPress={() => {
+                  setShowRatingModal(false);
+                  navigation.navigate('Tabs', { screen: 'Home' });
+                }}
+              >
+                <Text style={styles.ratingButtonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.ratingButtonNicAssist}
+                onPress={async () => {
+                  try {
+                    await submitRating(targetUserId, rating);
+                  } catch (error) {
+                    console.error('Error submitting rating:', error);
+                  }
+
+                  setShowRatingModal(false);
+                  navigation.navigate('Tabs', { screen: 'Home' });
+                }}
+              >
+                <Text style={styles.ratingButtonText}>Submit</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView behavior="padding" style={styles.modalContentContainer}>
@@ -844,4 +983,68 @@ const styles = StyleSheet.create({
   completedButton: { marginTop: 12, alignSelf: 'center', width: '80%', borderRadius: 8, paddingVertical: 12, alignItems: 'center', backgroundColor: '#76BD6F', borderBottomWidth: 2, borderBottomColor: '#1C5916' },
   completedText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   completedHeader: { fontSize: 16, fontWeight: '700', color: '#2b2b2b', marginBottom: 10, },
+  ratingModalContainer: {
+  flex: 1,
+  justifyContent: 'center',
+  alignItems: 'center',
+  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+},
+ratingModalContent: {
+  backgroundColor: '#fff',
+  padding: 20,
+  borderRadius: 10,
+  alignItems: 'center',
+  width: '80%',
+},
+ratingOuterZynBorder: {
+  padding: 6,
+  borderRadius: 60,
+  backgroundColor: '#cdcdcd',
+},
+ratingInnerWhiteBorder: {
+  padding: 3,
+  borderRadius: 54,
+  backgroundColor: '#fff',
+},
+ratingProfilePhoto: {
+  width: 100,
+  height: 100,
+  borderRadius: 50,
+  backgroundColor: '#ccc',
+},
+ratingProfilePlaceholder: {
+  width: 100,
+  height: 100,
+  borderRadius: 50,
+  backgroundColor: '#eee',
+  justifyContent: 'center',
+  alignItems: 'center',
+},
+ratingPlaceholderText: {
+  fontSize: 40,
+  fontWeight: 'bold',
+  color: '#60a8b8',
+},
+ratingModalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 10 },
+ratingButtonContainer: { flexDirection: 'row', justifyContent: 'space-between', width: '100%' },
+ratingButtonNicAssist: {
+  backgroundColor: '#60a8b8',
+  alignItems: 'center',
+  flex: 1,
+  paddingVertical: 10,
+  paddingHorizontal: 20,
+  borderRadius: 4,
+  marginHorizontal: 5,
+},
+ratingButtonDecline: {
+  backgroundColor: '#cdcdcd',
+  alignItems: 'center',
+  flex: 1,
+  paddingVertical: 10,
+  paddingHorizontal: 20,
+  borderRadius: 4,
+  marginHorizontal: 5,
+},
+ratingButtonText: { color: '#fff', fontSize: 16 },
+
 });
