@@ -16,7 +16,8 @@ export const sendNicQuestNotification = async (userName, currentUserId, otherUse
     );
 
     console.log(`📏 Distance to ${otherUserData.username} ${isGroup2 ? 'current location' : 'NicAssistAddress'} (${assist.NicAssistAddress}): ${distance.toFixed(2)} meters, userAQuestDistance: ${userAQuestDistance}m`);
-
+    const userDoc = await getDoc(doc(db, 'users', currentUserId));
+    const userARating = userDoc.exists() && userDoc.data().ratings?.average ? userDoc.data().ratings.average : 5;
     if (distance <= userAQuestDistance && otherUserData.expoPushToken) {
       console.log(`🔑 Push token for ${otherUserData.username}:`, otherUserData.expoPushToken);
       const message = {
@@ -29,6 +30,7 @@ export const sendNicQuestNotification = async (userName, currentUserId, otherUse
           userId: currentUserId,
           displayName: userName,
           profilePhoto: auth.currentUser?.photoURL || null,
+          userRating: userARating,
           nicAssistLat: assist.NicAssistLat,
           nicAssistLng: assist.NicAssistLng,
           isGroup2: isGroup2,
@@ -65,7 +67,8 @@ export const sendLocationBasedNotification = async (userName, currentUserId, oth
     );
 
     console.log(`📏 Distance to ${otherUserData.username} current location: ${distance.toFixed(2)} meters, userAQuestDistance: ${userAQuestDistance}m`);
-
+    const userDoc = await getDoc(doc(db, 'users', currentUserId));
+    const userARating = userDoc.exists() && userDoc.data().ratings?.average ? userDoc.data().ratings.average : 5;
     if (distance <= userAQuestDistance && otherUserData.expoPushToken) {
       console.log(`🔑 Push token for ${otherUserData.username}:`, otherUserData.expoPushToken);
       const message = {
@@ -78,6 +81,7 @@ export const sendLocationBasedNotification = async (userName, currentUserId, oth
           userId: currentUserId,
           displayName: userName,
           profilePhoto: auth.currentUser?.photoURL || null,
+          userRating: userARating,
           nicAssistLat: location.latitude,
           nicAssistLng: location.longitude,
         },

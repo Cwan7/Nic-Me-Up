@@ -20,6 +20,7 @@ import SettingsScreen from './screens/Tabs/SettingsScreen';
 import ProfileScreen from './screens/Tabs/ProfileScreen';
 import NicQuestWaitingScreen from './screens/NicQuestWaitingScreen';
 import NicAssistScreen from './screens/NicAssistScreen';
+import { FontAwesome } from 'react-native-vector-icons';
 
 
 const Stack = createStackNavigator();
@@ -72,6 +73,55 @@ export default function App() {
   const hasNavigated = useRef(false);
   const navigationRef = useRef();
   const locationSubscription = useRef(null);
+
+const CustomStarRating = ({ rating = 5, size = 20 }) => {
+  const stars = [];
+  const rounded = Math.round(rating * 2) / 2; // nearest 0.5
+
+  for (let i = 1; i <= 5; i++) {
+    if (i <= rounded) {
+      // Full gold star
+      stars.push(
+        <FontAwesome key={i} name="star" size={size} color="#FFD700" />
+      );
+    } else if (i - 0.5 === rounded) {
+      // Layered half gold + half grey
+      stars.push(
+        <View key={i} style={{ position: 'relative', width: size, height: size }}>
+          <FontAwesome
+            name="star"
+            size={size}
+            color="#cdcdcd" // base grey star
+            style={{ position: 'absolute', left: 0 }}
+          />
+          <View
+            style={{
+              width: size / 2,
+              overflow: 'hidden',
+              position: 'absolute',
+              left: 0,
+              height: size,
+            }}
+          >
+            <FontAwesome
+              name="star"
+              size={size}
+              color="#FFD700" // gold star on left half
+            />
+          </View>
+        </View>
+      );
+    } else {
+      // Empty grey star
+      stars.push(
+        <FontAwesome key={i} name="star" size={size} color="#cdcdcd" />
+      );
+    }
+  }
+
+  return <View style={{ flexDirection: 'row', marginTop: 5 }}>{stars}</View>;
+};
+
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -431,6 +481,7 @@ const handleModalAction = async (action) => {
                 </Text>
               </View>
             )}
+            <CustomStarRating rating={notification?.userRating ?? 5} size={20} />
             <Text style={styles.modalMessage}>Someone needs a pouch!</Text>
             <View style={styles.buttonContainer}>
               <TouchableOpacity style={styles.buttonNicAssist} onPress={() => handleModalAction('NicAssist')}>

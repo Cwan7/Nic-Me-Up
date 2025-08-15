@@ -222,64 +222,91 @@ export default function SettingsScreen() {
       </View>
 
       <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => {
-          setModalVisible(false);
-          setModalAddress('');
-          setModalSuggestions([]);
-          setSelectedNicAssist(null);
+  animationType="slide"
+  transparent={true}
+  visible={modalVisible}
+  onRequestClose={() => {
+    setModalVisible(false);
+    setModalAddress('');
+    setModalSuggestions([]);
+    setSelectedNicAssist(null);
+  }}
+>
+  <View style={styles.modalOverlay}>
+    <View style={styles.modalContent}>
+      <Text style={styles.modalTitle}>Add NicAssist Address</Text>
+      <TouchableOpacity
+        style={[styles.currentAddressButton]}
+        onPress={async () => {
+          const user = auth.currentUser;
+          if (user) {
+            const userDoc = await getDoc(doc(db, 'users', user.uid));
+            if (userDoc.exists()) {
+              const data = userDoc.data();
+              const location = data.location;
+              if (location && location.latitude && location.longitude) {
+                setSelectedNicAssist({
+                  NicAssistAddress: "Current Location",
+                  NicAssistLat: location.latitude,
+                  NicAssistLng: location.longitude,
+                  Active: true
+                });
+                setModalAddress("Current Location");
+                setModalSuggestions([]);
+              } else {
+                Alert.alert('Error', 'No location data available in Firestore.');
+              }
+            }
+          }
         }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add NicAssist Address</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your address"
-              value={modalAddress}
-              onChangeText={setModalAddress}
-              returnKeyType="done"
-              blurOnSubmit={true}
-            />
-            <FlatList
-              data={modalSuggestions}
-              keyExtractor={(item) => item.place_id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  onPress={() => handleAddressSelect(item)}
-                  style={styles.suggestion}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.suggestionText}>
-                    {item.structured_formatting.main_text} {item.structured_formatting.secondary_text}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: '#60a8b8' }]}
-                onPress={handleSaveAddress}
-              >
-                <Text style={styles.modalButtonText}>Save</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: '#cdcdcd' }]}
-                onPress={() => {
-                  setModalVisible(false);
-                  setModalAddress('');
-                  setModalSuggestions([]);
-                  setSelectedNicAssist(null);
-                }}
-              >
-                <Text style={styles.modalButtonText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        <Text style={[styles.currentAddressText]}>Use Current Location</Text>
+      </TouchableOpacity>
+      <TextInput
+        style={styles.input}
+        placeholder="Enter your address"
+        value={modalAddress}
+        onChangeText={setModalAddress}
+        returnKeyType="done"
+        blurOnSubmit={true}
+      />
+      <FlatList
+        data={modalSuggestions}
+        keyExtractor={(item) => item.place_id}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            onPress={() => handleAddressSelect(item)}
+            style={styles.suggestion}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.suggestionText}>
+              {item.structured_formatting.main_text} {item.structured_formatting.secondary_text}
+            </Text>
+          </TouchableOpacity>
+        )}
+      />
+      <View style={styles.modalButtons}>
+        <TouchableOpacity
+          style={[styles.modalButton, { backgroundColor: '#60a8b8' }]}
+          onPress={handleSaveAddress}
+        >
+          <Text style={styles.modalButtonText}>Save</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modalButton, { backgroundColor: '#cdcdcd' }]}
+          onPress={() => {
+            setModalVisible(false);
+            setModalAddress('');
+            setModalSuggestions([]);
+            setSelectedNicAssist(null);
+          }}
+        >
+          <Text style={styles.modalButtonText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  </View>
+</Modal>
     </View>
   );
 }
@@ -315,5 +342,7 @@ const styles = StyleSheet.create({
   editButton: { width: 30, height: 30, marginLeft: 5 },
   deleteButton: { backgroundColor: '#60a8b8', padding: 10, borderRadius: 5, marginTop: 5, alignItems: 'center' },
   deleteText: { color: '#fff', fontSize: 16 },
-  AddAddress: {paddingTop: 10, paddingBottom: 10, fontSize: 16}
+  AddAddress: {paddingTop: 10, paddingBottom: 10, fontSize: 16},
+  currentAddressText: {color: '#60a8b8', fontSize: 16, fontWeight: '500', textAlign: 'center'},
+  currentAddressButton: {paddingVertical: 10,paddingHorizontal: 20,borderRadius: 4,marginHorizontal: 10,alignItems: 'center',flex: 1,},
 });

@@ -282,7 +282,7 @@ const checkProximityAndUpdate = useCallback(async () => {
       proximityTimerRef.current = setTimeout(() => {
         setShowCompletionPrompt(true); // this changes detailsContainer UI
         console.log("✅ 5s hold met — showing completion prompt");
-      }, 5000);
+      }, 1000);
     }
   } 
 
