@@ -280,7 +280,7 @@ const checkProximityAndUpdate = useCallback(async () => {
     if (!proximityTimerRef.current) {
       console.log("⏳ Within 3m — starting 5s completion timer...");
       proximityTimerRef.current = setTimeout(() => {
-        setShowCompletionPrompt(true); // this changes detailsContainer UI
+        setShowCompletionPrompt(true); 
         console.log("✅ 5s hold met — showing completion prompt");
       }, 1000);
     }

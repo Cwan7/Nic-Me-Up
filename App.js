@@ -143,8 +143,17 @@ const CustomStarRating = ({ rating = 5, size = 20 }) => {
       }, { merge: true });
 
       const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
-      const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
-      const granted = foregroundStatus === 'granted' && backgroundStatus === 'granted';
+
+      let backgroundStatus = 'denied';
+
+      // Only ask for background permission if foreground was granted
+      if (foregroundStatus === 'granted') {
+        const bgPerm = await Location.requestBackgroundPermissionsAsync();
+        backgroundStatus = bgPerm.status;
+      }
+
+      // Allow tracking if foreground is granted (While Using) OR both are granted (Always)
+      const granted = foregroundStatus === 'granted';
       setLocationPermission(granted ? 'granted' : 'denied');
 
       if (granted) {
