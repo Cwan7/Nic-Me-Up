@@ -326,7 +326,9 @@ const handleNicQuest = async () => {
     const userADocRef = doc(db, 'users', currentUser.uid);
 
     await updateDoc(userADocRef, {
-      'NicMeUp.sessionId': sessionId 
+      'NicMeUp.sessionId': sessionId,
+      'NicMeUp.nicAssistResponse': null,
+      'NicMeUp.nicQuestAssistedBy': null,
     }, { merge: true });
 
     const usersSnapshot = await getDocs(collection(db, 'users'));
@@ -404,6 +406,7 @@ const handleNicQuest = async () => {
         nicAssistLat: nearestAssist?.NicAssistLat || userLocation.latitude,
         nicAssistLng: nearestAssist?.NicAssistLng || userLocation.longitude,
         active: true,
+        canceledBy: null,
         userAActiveAt: Timestamp.now(),
         userBActiveAt: null,
         createdAt: Timestamp.now(),

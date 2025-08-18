@@ -1,88 +1,85 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const functions = require("firebase-functions");
+const { onRequest } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+const { Timestamp } = require("firebase-admin/firestore");
 
-admin.initializeApp();
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
+
 const db = admin.firestore();
+const INACTIVITY_LIMIT_MINUTES = 0.5;
 
 async function performCleanup() {
-  const usersSnapshot = await db.collection("users")
-    .where("NicMeUp.sessionId", "!=", "")
+  const now = Timestamp.now();
+  const cutoff = Timestamp.fromMillis(now.toMillis() - INACTIVITY_LIMIT_MINUTES * 60 * 1000);
+
+  const sessionsSnapshot = await db.collection("nicSessions")
+    .where("active", "==", true)
     .get();
+
   const updates = [];
-  const notifications = [];
+  const processedSessions = new Set();
 
-  for (const doc of usersSnapshot.docs) {
-    const data = doc.data();
-    const userId = doc.id;
+  for (const sessionDoc of sessionsSnapshot.docs) {
+    const sessionData = sessionDoc.data();
+    const sessionId = sessionDoc.id;
 
-    console.log(`🧹 Processing user: ${userId} (session ${data.NicMeUp?.sessionId || "N/A"})`);
+    const updatedAtInactive = !sessionData.updatedAt || sessionData.updatedAt < cutoff;
+    const userAInactive = !sessionData.userAActiveAt || sessionData.userAActiveAt < cutoff;
+    const userBInactive = !sessionData.userBActiveAt || sessionData.userBActiveAt < cutoff;
 
-    // Update user's own doc to clear all specified fields
-    updates.push(doc.ref.update({
-      "NicMeUp.nicAssistResponse": null,
-      "NicMeUp.nicQuestAssistedBy": null,
-      "NicMeUp.sessionId": "",
-      "NicMeUp.showAlert": false,
-    }));
-    console.log(`↪️ Cleared session fields for user ${userId}`);
+    if (updatedAtInactive || userAInactive || userBInactive) {
+      if (userAInactive && userBInactive) {
+        // 🔹 Both inactive → delete session entirely
+        updates.push(sessionDoc.ref.delete());
 
-    // Find the other participant in the same session
-    const sameSessionSnap = await db.collection('users')
-      .where("NicMeUp.sessionId", "==", data.NicMeUp?.sessionId || "")
-      .get();
+        // Clear both users NicMeUp state
+        const participantsSnap = await db.collection("users")
+          .where("NicMeUp.sessionId", "==", sessionId)
+          .get();
 
-    const otherDoc = sameSessionSnap.docs.find(d => d.id !== userId);
+        participantsSnap.forEach((userDoc) => {
+          updates.push(userDoc.ref.update({
+            "NicMeUp.nicAssistResponse": null,
+            "NicMeUp.nicQuestAssistedBy": null,
+            "NicMeUp.sessionId": "",
+          }));
+        });
 
-    if (otherDoc) {
-      const otherUserRef = otherDoc.ref;
-      const otherUserData = otherDoc.data();
-      const otherUserId = otherDoc.id;
-
-      // Update other user's doc to set showAlert to true
-      updates.push(otherUserRef.update({
-        "NicMeUp.showAlert": true,
-      }));
-      console.log(`⚠️ Marked user ${otherUserId} as alerted (session cleared)`);
-
-      // Send notification
-      if (otherUserData.expoPushToken) {
-        const messaging = admin.messaging();
-        notifications.push(
-          messaging.sendEachForMulticast({
-            tokens: [otherUserData.expoPushToken],
-            notification: {
-              title: "Session Cleared",
-              body: `${data.username || "A user"} has cleared the session.`,
-            },
-          })
-        );
-        console.log(`📲 Queued push notification to user ${otherUserId}`);
       } else {
-        console.log(`🚫 No push token for user ${otherUserId}`);
+        // 🔹 One-sided inactivity → just mark session inactive
+        updates.push(sessionDoc.ref.update({ active: false, canceledBy: 'Cloud' }));
+
+        // Clear the inactive user’s NicMeUp
+        const inactiveUserId = userAInactive ? sessionData.userAId : sessionData.userBId;
+        updates.push(db.collection("users").doc(inactiveUserId).update({
+          "NicMeUp.nicAssistResponse": null,
+          "NicMeUp.nicQuestAssistedBy": null,
+          "NicMeUp.sessionId": "",
+        }));
       }
-    } else {
-      console.log(`❗ No other user found for session ${data.NicMeUp?.sessionId || "N/A"}`);
     }
+
+    processedSessions.add(sessionId);
   }
 
   await Promise.all(updates);
-  await Promise.all(notifications);
-  console.log(`✅ Cleaned up ${updates.length} fields, sent ${notifications.length} notifications`);
+  console.log(`✅ Cleaned ${processedSessions.size} sessions`);
 }
 
-// Scheduled Cloud Function
+// Run every 1 min
 exports.cleanupInactiveSessions = onSchedule("every 1 minutes", async () => {
   await performCleanup();
 });
 
-// Local Test Endpoint
-exports.testCleanup = functions.https.onRequest(async (req, res) => {
+// Local test endpoint
+exports.testCleanup = onRequest(async (req, res) => {
   try {
     await performCleanup();
-    res.status(200).send("Cleanup function executed.");
-  } catch (error) {
-    console.error("❌ Error running testCleanup:", error);
-    res.status(500).send("Error executing cleanup function.");
+    res.status(200).send("Cleanup executed.");
+  } catch (err) {
+    console.error("❌ Error in testCleanup:", err);
+    res.status(500).send("Error executing cleanup.");
   }
 });

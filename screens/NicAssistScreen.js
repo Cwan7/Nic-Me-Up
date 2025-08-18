@@ -61,7 +61,6 @@ export default function NicAssistScreen() {
   const unsubscribeLocationB = useRef(null);
   const hasNavigatedRef = useRef(false);
   const isMountedRef = useRef(true);
-  const [showAlert, setShowAlert] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
@@ -82,6 +81,7 @@ export default function NicAssistScreen() {
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [rating, setRating] = useState(0)
   const targetUserId = isUserA ? userBId : userAId;
+  const [showCancelAlert, setShowCancelAlert] = useState(false)
 
 
   const userADocRef = doc(db, 'users', userAId);
@@ -175,7 +175,6 @@ const handleCompletion = async () => {
       'NicMeUp.nicAssistResponse': null,
       'NicMeUp.nicQuestAssistedBy': null,
       'NicMeUp.sessionId': '',
-      'NicMeUp.showAlert': false
     };
 
     await Promise.all([
@@ -202,42 +201,61 @@ const handleCompletion = async () => {
 useEffect(() => {
   if (!sessionId || !userAId || !userBId || !currentUserId) return;
 
-  const userRole = currentUserId === userAId ? 'userA' : 'userB';
+  const userRole = currentUserId === userAId ? "userA" : "userB";
   const intervalId = startHeartbeat(sessionId, userRole);
+  heartbeatIntervalRef.current = intervalId;
 
-  // Listen for session becoming inactive
-  const sessionRef = doc(db, 'nicSessions', sessionId);
-  const unsubSession = onSnapshot(sessionRef, (snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.data();
-      if (data.active === false) {
-        console.log("🛑 Session inactive — stopping heartbeat");
-        clearInterval(intervalId);
-        heartbeatIntervalRef.current = null;
+  const sessionRef = doc(db, "nicSessions", sessionId);
+  const unsubscribe = onSnapshot(sessionRef, (snapshot) => {
+    if (!snapshot.exists()) {
+      console.log("⚠️ Session deleted");
+      clearInterval(intervalId);
+      heartbeatIntervalRef.current = null;
+      setShowCancelAlert(true); // fallback if doc is gone
+      return;
+    }
+
+    const data = snapshot.data();
+
+    if (data.active === false) {
+      console.log("🛑 Session inactive — stopping heartbeat");
+      clearInterval(intervalId);
+      heartbeatIntervalRef.current = null;
+
+      if (data.status === "completed") {
+        console.log("✅ Session completed — no cancel alert");
+        // you could set another state here like setShowCompletionPrompt(false)
+      } else if (data.canceledBy && data.canceledBy !== currentUserId) {
+        console.log(`🚨 Session canceled by ${data.canceledBy}`);
+        setShowCancelAlert(true); // show alert only if someone else or Cloud canceled
+      } else {
+        console.log("👋 Session ended by current user — no alert");
       }
     }
   });
 
   return () => {
     clearInterval(intervalId);
-    unsubSession();
-    console.log('🧹 Cleaned up heartbeat tracking & session listener on unmount');
+    heartbeatIntervalRef.current = null;
+    unsubscribe();
+    console.log("🧹 Cleaned up heartbeat + session listener");
   };
 }, [sessionId, userAId, userBId, currentUserId]);
 
 
-  useEffect(() => {
-    if (isGroup2 && userBLocation?.latitude && userBLocation?.longitude) {
-      setNicAssistLat(userBLocation.latitude);
-      setNicAssistLng(userBLocation.longitude);
-    } else if (!isGroup2 && userBData?.NicAssists?.length > 0) {
-      const activeAssist = userBData.NicAssists.find(assist => assist.Active && calculateDistance(userALocation?.latitude || initialNicAssistLat, userALocation?.longitude || initialNicAssistLng, assist.NicAssistLat, assist.NicAssistLng) <= questDistance);
-      if (activeAssist) {
-        setNicAssistLat(activeAssist.NicAssistLat);
-        setNicAssistLng(activeAssist.NicAssistLng);
-      }
+
+useEffect(() => {
+  if (isGroup2 && userBLocation?.latitude && userBLocation?.longitude) {
+    setNicAssistLat(userBLocation.latitude);
+    setNicAssistLng(userBLocation.longitude);
+  } else if (!isGroup2 && userBData?.NicAssists?.length > 0) {
+    const activeAssist = userBData.NicAssists.find(assist => assist.Active && calculateDistance(userALocation?.latitude || initialNicAssistLat, userALocation?.longitude || initialNicAssistLng, assist.NicAssistLat, assist.NicAssistLng) <= questDistance);
+    if (activeAssist) {
+      setNicAssistLat(activeAssist.NicAssistLat);
+      setNicAssistLng(activeAssist.NicAssistLng);
     }
-  }, [isGroup2, userBLocation, userBData, userALocation, questDistance, initialNicAssistLat, initialNicAssistLng]);
+  }
+}, [isGroup2, userBLocation, userBData, userALocation, questDistance, initialNicAssistLat, initialNicAssistLng]);
 
   const PROXIMITY_THRESHOLD = 3;
 
@@ -281,7 +299,7 @@ const checkProximityAndUpdate = useCallback(async () => {
       console.log("⏳ Within 3m — starting 5s completion timer...");
       proximityTimerRef.current = setTimeout(() => {
         setShowCompletionPrompt(true); 
-        console.log("✅ 5s hold met — showing completion prompt");
+        console.log("✅ 1s hold met — showing completion prompt");
       }, 1000);
     }
   } 
@@ -368,33 +386,6 @@ useEffect(() => {
 
       setUserAData(userAData);
       setUserBData(userBData);
-
-      // Start heartbeat using new nicSessions logic
-      // startHeartbeat(currentUserId, sessionIdRef.current);
-
-      // Setup alert listeners
-      const handleSnapshot = (docSnapshot, userId) => {
-        if (!docSnapshot.exists()) return;
-        const data = docSnapshot.data();
-        if (
-          data.NicMeUp?.showAlert &&
-          data.NicMeUp.sessionId === sessionIdRef.current &&
-          !hasNavigatedRef.current &&
-          !alertShown
-        ) {
-          setShowAlert(true);
-          setAlertShown(true);
-        }
-      };
-
-      const unsubscribeSessionA = onSnapshot(doc(db, 'users', userAId), doc => handleSnapshot(doc, userAId));
-      const unsubscribeSessionB = onSnapshot(doc(db, 'users', userBId), doc => handleSnapshot(doc, userBId));
-
-      unsubscribeSession.current = () => {
-        unsubscribeSessionA();
-        unsubscribeSessionB();
-      };
-
       // Chat setup
       const chatId = [userAId, userBId].sort().join('_');
       const chatDocRef = doc(db, 'chats', chatId);
@@ -499,13 +490,11 @@ useEffect(() => {
   init();
 
   return () => {
-    if (unsubscribeSession.current) unsubscribeSession.current();
     if (unsubscribeMessages.current) unsubscribeMessages.current();
     if (unsubscribeChat.current) unsubscribeChat.current();
     if (unsubscribeLocationA.current) unsubscribeLocationA.current();
     if (unsubscribeLocationB.current) unsubscribeLocationB.current();
     hasNavigatedRef.current = false;
-    setShowAlert(false);
   };
 }, [userAId, userBId, sessionId, currentUserId]);
 
@@ -513,15 +502,12 @@ useEffect(() => {
 useFocusEffect(
   useCallback(() => {
     return () => {
-      if (unsubscribeSession.current) unsubscribeSession.current();
+      
       if (unsubscribeMessages.current) unsubscribeMessages.current();
       if (unsubscribeChat.current) unsubscribeChat.current();
       if (unsubscribeLocationA.current) unsubscribeLocationA.current();
       if (unsubscribeLocationB.current) unsubscribeLocationB.current();
-
       hasNavigatedRef.current = false;
-      setShowAlert(false);
-
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = null;
@@ -593,7 +579,6 @@ const handleCancel = async () => {
         NicMeUp: {
           ...userAData?.NicMeUp || {},
           nicQuestAssistedBy: null,
-          showAlert: false,
           sessionId: ""
         }
       }, { merge: true });
@@ -602,7 +587,6 @@ const handleCancel = async () => {
         NicMeUp: {
           ...userBData?.NicMeUp || {},
           nicAssistResponse: null,
-          showAlert: true,
           sessionId: sessionIdRef.current
         }
       }, { merge: true });
@@ -613,7 +597,6 @@ const handleCancel = async () => {
         NicMeUp: {
           ...userBData?.NicMeUp || {},
           nicAssistResponse: null,
-          showAlert: false,
           sessionId: ""
         }
       }, { merge: true });
@@ -622,7 +605,6 @@ const handleCancel = async () => {
         NicMeUp: {
           ...userAData?.NicMeUp || {},
           nicQuestAssistedBy: null,
-          showAlert: true,
           sessionId: sessionIdRef.current
         }
       }, { merge: true });
@@ -631,7 +613,8 @@ const handleCancel = async () => {
     // Mark the session inactive
     await updateDoc(sessionRef, {
       active: false,
-      updatedAt: new Date()
+      canceledAt: new Date(),
+      canceledBy: currentUserId
     });
 
     navigation.navigate('Tabs', { screen: 'Home' });
@@ -654,7 +637,6 @@ const handleAlertOk = async () => {
     await updateDoc(currentUserRef, {
       NicMeUp: {
         ...currentUserData?.NicMeUp || {},
-        showAlert: false,
         sessionId: ""
       }
     }, { merge: true });
@@ -826,7 +808,7 @@ const handleAlertOk = async () => {
       <TouchableOpacity style={styles.bottomButton} onPress={handleCancel}>
         <Text style={styles.buttonText}>{isUserA ? 'Cancel NicQuest' : 'Cancel NicAssist'}</Text>
       </TouchableOpacity>
-      <CancelAlert visible={showAlert} onOk={handleAlertOk} userId={currentUserId} />
+      <CancelAlert visible={showCancelAlert} onOk={handleAlertOk} userId={currentUserId} />
       {/* Ratings Modal */}
       <Modal
         visible={showRatingModal}

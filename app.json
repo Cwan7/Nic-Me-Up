@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "jsEngine": "hermes",
-    "icon": "./assets/Logo4.png",
+    "icon": "./assets/Logo5.png",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.conor.nicmeup",
@@ -26,7 +26,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/Logo4.png",
+          "icon": "./assets/Logo5.png",
           "mode": "production",
           "displayInForeground": true,
           "remoteNotification": true
