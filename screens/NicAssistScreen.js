@@ -9,19 +9,25 @@ import { getDistance } from 'geolib';
 import { AirbnbRating } from 'react-native-ratings';
 
 
-const CancelAlert = ({ visible, onOk, userId }) => {
-  const [isVisible, setIsVisible] = useState(visible);
+const CancelAlert = ({ visible, onOk }) => {
   useEffect(() => {
-    setIsVisible(visible);
+    if (visible) {
+      console.log("🚨 Alert shown once");
+      Alert.alert(
+        "NicQuest Canceled",
+        "The NicQuest session has been canceled.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              onOk(); 
+            },
+          },
+        ]
+      );
+    }
   }, [visible]);
-
-  if (!isVisible) return null;
-  console.log(`Alert Shown`)
-  return Alert.alert(
-    'NicQuest Canceled',
-    'The NicQuest session has been canceled.',
-    [{ text: 'OK', onPress: () => { setIsVisible(false); onOk(); }, style: 'default' }]
-  );
+  return null;
 };
 
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -48,7 +54,7 @@ const isValidLocation = (loc) =>
 
 export default function NicAssistScreen() {
   const route = useRoute();
-  const { userAId, userBId, sessionId, nicAssistLat: initialNicAssistLat, nicAssistLng: initialNicAssistLng, isGroup2 } = route.params || {};
+  const { userAId, userBId, sessionId, nicAssistLat: initialNicAssistLat, nicAssistLng: initialNicAssistLng, isGroup2, userAPhoto, userBPhoto } = route.params || {};
   const navigation = useNavigation();
   const sessionIdRef = useRef(sessionId);
   const [userAData, setUserAData] = useState(null);
@@ -82,11 +88,32 @@ export default function NicAssistScreen() {
   const [rating, setRating] = useState(0)
   const targetUserId = isUserA ? userBId : userAId;
   const [showCancelAlert, setShowCancelAlert] = useState(false)
-
+  const [userAProfile, setUserAProfile] = useState(null);
+  const [userBProfile, setUserBProfile] = useState(null);
 
   const userADocRef = doc(db, 'users', userAId);
   const userADoc = useRef(null);
-  
+
+//UseEffect for fetching profileURL's faster
+useEffect(() => {
+  const loadProfiles = async () => {
+    if (!userAPhoto) {
+      const userADoc = await getDoc(doc(db, 'users', userAId));
+      setUserAProfile(userADoc.data());
+    } else {
+      setUserAProfile({ photoURL: userAPhoto });
+    }
+
+    if (!userBPhoto) {
+      const userBDoc = await getDoc(doc(db, 'users', userBId));
+      setUserBProfile(userBDoc.data());
+    } else {
+      setUserBProfile({ photoURL: userBPhoto });
+    }
+  };
+
+  loadProfiles();
+}, [userAId, userBId, userAPhoto, userBPhoto]);
   useEffect(() => {
     const fetchUserAData = async () => {
       userADoc.current = await getDoc(userADocRef);
@@ -637,7 +664,9 @@ const handleAlertOk = async () => {
     await updateDoc(currentUserRef, {
       NicMeUp: {
         ...currentUserData?.NicMeUp || {},
-        sessionId: ""
+        sessionId: "",
+        nicAssistResponse: null,
+        nicQuestAssistedBy: null,
       }
     }, { merge: true });
 
@@ -676,32 +705,37 @@ const handleAlertOk = async () => {
             <Text style={styles.title}>{isUserA ? 'NicQuest' : 'NicAssist'} Session</Text>
             <View style={styles.usersContainer}>
               <View style={styles.userCard}>
-                {userAData.photoURL ? (
-                  <Image source={{ uri: userAData.photoURL }} style={styles.userPhoto} />
+                {userAProfile?.photoURL ? (
+                  <Image source={{ uri: userAProfile.photoURL }} style={styles.userPhoto} />
                 ) : (
                   <View style={[styles.userPhoto, { backgroundColor: '#60a8b8' }]}>
                     <Text style={styles.userPhotoText}>
-                      {userAData.username ? userAData.username[0].toUpperCase() : 'U'}
+                      {userAData?.username ? userAData.username[0].toUpperCase() : 'U'}
                     </Text>
                   </View>
                 )}
                 <Text style={styles.roleLabel}>{isUserA ? 'You' : 'NicQuest'}</Text>
-                <Text style={styles.username}>{userAData.username || 'Unknown'}</Text>
+                <Text style={styles.username}>{userAData?.username || 'Unknown'}</Text>
               </View>
-              <View style={styles.vsContainer}><Text style={styles.vsText}>→</Text></View>
+
+              <View style={styles.vsContainer}>
+                <Text style={styles.vsText}>→</Text>
+              </View>
+
               <View style={styles.userCard}>
-                {userBData.photoURL ? (
-                  <Image source={{ uri: userBData.photoURL }} style={styles.userPhoto} />
+                {userBProfile?.photoURL ? (
+                  <Image source={{ uri: userBProfile.photoURL }} style={styles.userPhoto} />
                 ) : (
                   <View style={[styles.userPhoto, { backgroundColor: '#60a8b8' }]}>
                     <Text style={styles.userPhotoText}>
-                      {userBData.username ? userBData.username[0].toUpperCase() : 'U'}
+                      {userBData?.username ? userBData.username[0].toUpperCase() : 'U'}
                     </Text>
                   </View>
                 )}
                 <Text style={styles.roleLabel}>{isUserA ? 'NicAssist' : 'You'}</Text>
-                <Text style={styles.username}>{userBData.username || 'Unknown'}</Text>
+                <Text style={styles.username}>{userBData?.username || 'Unknown'}</Text>
               </View>
+
             </View>
             <TouchableOpacity style={styles.chatIcon} onPress={() => setModalVisible(true)}>
               <View style={styles.iconContainer}>

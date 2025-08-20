@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from '../firebase';
-import { doc, onSnapshot, updateDoc, serverTimestamp} from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, updateDoc, serverTimestamp} from 'firebase/firestore';
 
 export default function NicQuestWaitingScreen({ route }) {
   const { userId, questDistance, sessionId, nicAssistLat, nicAssistLng } = route.params;
@@ -21,14 +21,41 @@ export default function NicQuestWaitingScreen({ route }) {
           console.log('✅ userB accepted NicQuest — navigating to NicAssistScreen');
           hasNavigatedRef.current = true;
 
-          navigation.navigate('NicAssist', {
-            userAId: session.userAId,
-            userBId: session.userBId,
-            sessionId: session.sessionId,
-            nicAssistLat: session.nicAssistLat,
-            nicAssistLng: session.nicAssistLng,
-            isGroup2: session.isGroup2
-          });
+          // fetch photoURLs before navigating
+          const fetchAndNavigate = async () => {
+            try {
+              const userADoc = await getDoc(doc(db, 'users', session.userAId));
+              const userBDoc = await getDoc(doc(db, 'users', session.userBId));
+
+              const userAPhoto = userADoc.exists() ? userADoc.data().photoURL : null;
+              const userBPhoto = userBDoc.exists() ? userBDoc.data().photoURL : null;
+
+              // now navigate and pass photos too
+              navigation.navigate('NicAssist', {
+                userAId: session.userAId,
+                userBId: session.userBId,
+                sessionId: session.sessionId,
+                nicAssistLat: session.nicAssistLat,
+                nicAssistLng: session.nicAssistLng,
+                isGroup2: session.isGroup2,
+                userAPhoto,   // new
+                userBPhoto,   // new
+              });
+            } catch (err) {
+              console.error("Error fetching user photos:", err);
+              // fallback navigation if docs fail
+              navigation.navigate('NicAssist', {
+                userAId: session.userAId,
+                userBId: session.userBId,
+                sessionId: session.sessionId,
+                nicAssistLat: session.nicAssistLat,
+                nicAssistLng: session.nicAssistLng,
+                isGroup2: session.isGroup2,
+              });
+            }
+          };
+
+          fetchAndNavigate();
         }
       } else {
         console.log('⚠️ Session document deleted (possibly canceled)');
