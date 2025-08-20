@@ -136,49 +136,74 @@ const startHeartbeat = (sessionId, userRole) => {
   }, 10000); 
 };
 
-async function submitRating(targetUserId, rating) {
+// 🚀 Submit a rating and notify the other user
+const submitRating = async (targetUserId, rating, sessionId) => {
   try {
-    const userRef = doc(db, 'users', targetUserId);
-    const snap = await getDoc(userRef);
+    const targetUserRef = doc(db, "users", targetUserId);
+    const targetUserSnap = await getDoc(targetUserRef);
 
-    if (!snap.exists()) {
-      await setDoc(userRef, {
-        ratings: {
-          sum: rating,
-          count: 1,
-          average: rating
-        }
-      }, { merge: true });
+    if (!targetUserSnap.exists()) {
+      console.log("❌ Target user not found:", targetUserId);
       return;
     }
-    if (!snap.data().ratings) {
-      await updateDoc(userRef, {
-        ratings: {
-          sum: rating,
-          count: 1,
-          average: rating
-        }
-      });
+
+    const targetUserData = targetUserSnap.data();
+
+    // --- RATING LOGIC ---
+    const ratings = targetUserData.ratings || { sum: 0, count: 0, average: 0 };
+    const newSum = (ratings.sum || 0) + rating;
+    const newCount = (ratings.count || 0) + 1;
+    const newAverage = newSum / newCount;
+
+    await updateDoc(targetUserRef, {
+      ratings: { sum: newSum, count: newCount, average: newAverage },
+    });
+
+    console.log(
+      `⭐ Updated ratings for ${targetUserId}: avg=${newAverage}, count=${newCount}`
+    );
+
+    // --- PUSH NOTIFICATION ---
+    const targetToken = targetUserData?.expoPushToken;
+    console.log("🔑 Retrieved push token:", targetToken);
+
+    if (!targetToken) {
+      console.log(`⚠️ No expoPushToken found for ${targetUserId}`);
       return;
     }
-    await updateDoc(userRef, {
-      'ratings.sum': increment(rating),
-      'ratings.count': increment(1)
+
+    if (typeof targetToken !== "string") {
+      console.log(`⚠️ expoPushToken is not a string:`, targetToken);
+      return;
+    }
+
+    const message = {
+      to: targetToken,
+      sound: "default",
+      title: "⭐ You got a new review!",
+      body: "Your NicQuest partner just left you feedback.",
+      data: { type: "review" },
+    };
+
+    console.log("📬 Sending rating notification:", message);
+
+    const response = await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Accept-Encoding": "gzip, deflate",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(message),
     });
 
-    // Get updated data to recalculate average
-    const updatedSnap = await getDoc(userRef);
-    const updatedRatings = updatedSnap.data().ratings || { sum: 0, count: 1 };
-    const avg = (updatedRatings.sum / updatedRatings.count).toFixed(2);
-
-    await updateDoc(userRef, {
-      'ratings.average': Number(avg)
-    });
-
-  } catch (error) {
-    console.error('Error submitting rating:', error);
+    const result = await response.json();
+    console.log("📬 Rating notification response:", result);
+  } catch (err) {
+    console.error("❌ Error submitting rating:", err);
   }
-}
+};
+
 
 
 const handleCompletion = async () => {
@@ -234,32 +259,48 @@ useEffect(() => {
 
   const sessionRef = doc(db, "nicSessions", sessionId);
   const unsubscribe = onSnapshot(sessionRef, (snapshot) => {
-    if (!snapshot.exists()) {
-      console.log("⚠️ Session deleted");
-      clearInterval(intervalId);
-      heartbeatIntervalRef.current = null;
-      setShowCancelAlert(true); // fallback if doc is gone
-      return;
+  if (!snapshot.exists()) {
+    console.log("⚠️ Session deleted");
+    clearInterval(intervalId);
+    heartbeatIntervalRef.current = null;
+    setShowCancelAlert(true);
+    return;
+  }
+
+  const data = snapshot.data();
+
+  // 🔹 Case: session was completed
+  if (data.status === "completed") {
+    console.log(`✅ Session completed by ${data.completedBy}`);
+
+    clearInterval(intervalId);
+    heartbeatIntervalRef.current = null;
+
+    // if *I* completed, show rating modal (already handled in handleCompletion)
+    if (data.completedBy === currentUserId) {
+      console.log("🎉 You completed — already showing your rating modal");
+    } else {
+      // if OTHER user completed, auto-show my rating modal
+      setShowRatingModal(true);
     }
+    return; // stop here
+  }
 
-    const data = snapshot.data();
+  // 🔹 Case: canceled
+  if (data.active === false) {
+    console.log("🛑 Session inactive — stopping heartbeat");
+    clearInterval(intervalId);
+    heartbeatIntervalRef.current = null;
 
-    if (data.active === false) {
-      console.log("🛑 Session inactive — stopping heartbeat");
-      clearInterval(intervalId);
-      heartbeatIntervalRef.current = null;
-
-      if (data.status === "completed") {
-        console.log("✅ Session completed — no cancel alert");
-        // you could set another state here like setShowCompletionPrompt(false)
-      } else if (data.canceledBy && data.canceledBy !== currentUserId) {
-        console.log(`🚨 Session canceled by ${data.canceledBy}`);
-        setShowCancelAlert(true); // show alert only if someone else or Cloud canceled
-      } else {
-        console.log("👋 Session ended by current user — no alert");
-      }
+    if (data.canceledBy && data.canceledBy !== currentUserId) {
+      console.log(`🚨 Session canceled by ${data.canceledBy}`);
+      setShowCancelAlert(true);
+    } else {
+      console.log("👋 Session ended by current user — no alert");
     }
-  });
+  }
+});
+
 
   return () => {
     clearInterval(intervalId);
@@ -284,7 +325,7 @@ useEffect(() => {
   }
 }, [isGroup2, userBLocation, userBData, userALocation, questDistance, initialNicAssistLat, initialNicAssistLng]);
 
-  const PROXIMITY_THRESHOLD = 3;
+  const PROXIMITY_THRESHOLD = 20;
 
 const checkProximityAndUpdate = useCallback(async () => {
   if (!isMountedRef.current) return;
@@ -321,9 +362,9 @@ const checkProximityAndUpdate = useCallback(async () => {
   console.log(`📏 Calculated distance: ${distance.toFixed(2)} meters between ${userAId} and ${userBId}`);
 
   // === New 5-second completion prompt logic ===
-  if (distance <= 3) {
+  if (distance <= PROXIMITY_THRESHOLD) {
     if (!proximityTimerRef.current) {
-      console.log("⏳ Within 3m — starting 5s completion timer...");
+      console.log(`⏳ Within ${PROXIMITY_THRESHOLD} — starting 5s completion timer...`);
       proximityTimerRef.current = setTimeout(() => {
         setShowCompletionPrompt(true); 
         console.log("✅ 1s hold met — showing completion prompt");
