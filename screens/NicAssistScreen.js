@@ -721,7 +721,7 @@ const handleAlertOk = async () => {
     setModalVisible(false);
     setAlertShown(false); // Reset alertShown after OK
     navigation.navigate('Tabs', { screen: 'Home' });
-    hasNavigatedRef.current = true;
+    hasNavigatedRef.current = false;
 
   } catch (error) {
     console.error('❌ handleAlertOk error:', error);
