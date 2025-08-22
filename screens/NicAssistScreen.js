@@ -7,6 +7,7 @@ import MapView, { Marker } from 'react-native-maps';
 import { MaterialIcons } from '@expo/vector-icons';
 import { getDistance } from 'geolib';
 import { AirbnbRating } from 'react-native-ratings';
+import { useHasNavigated } from "../NavContext";
 
 
 const CancelAlert = ({ visible, onOk }) => {
@@ -90,9 +91,9 @@ export default function NicAssistScreen() {
   const [showCancelAlert, setShowCancelAlert] = useState(false)
   const [userAProfile, setUserAProfile] = useState(null);
   const [userBProfile, setUserBProfile] = useState(null);
-
   const userADocRef = doc(db, 'users', userAId);
   const userADoc = useRef(null);
+  const hasNavigated = useHasNavigated();
 
 //UseEffect for fetching profileURL's faster
 useEffect(() => {
@@ -291,6 +292,7 @@ useEffect(() => {
     console.log("🛑 Session inactive — stopping heartbeat");
     clearInterval(intervalId);
     heartbeatIntervalRef.current = null;
+    hasNavigated.current = false;
 
     if (data.canceledBy && data.canceledBy !== currentUserId) {
       console.log(`🚨 Session canceled by ${data.canceledBy}`);
@@ -307,6 +309,7 @@ useEffect(() => {
     heartbeatIntervalRef.current = null;
     unsubscribe();
     console.log("🧹 Cleaned up heartbeat + session listener");
+    hasNavigated.current = false; 
   };
 }, [sessionId, userAId, userBId, currentUserId]);
 
@@ -410,7 +413,15 @@ const checkProximityAndUpdate = useCallback(async () => {
   }
   isCheckingRef.current = false;
 }, [userAId, userBId, sessionId, userALocation, userBLocation, currentUserId, showCompletionPrompt]);
-
+useEffect(() => {
+  return () => {
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+      console.log("🧹 Cleared heartbeat interval on unmount");
+    }
+  };
+}, []);
 useEffect(() => {
   if (!isMountedRef.current) return; // skip if unmounted
   if (userALocation?.latitude && userBLocation?.latitude) {
@@ -616,27 +627,23 @@ const handleCancel = async () => {
     const userBDocRef = doc(db, 'users', userBId);
     const sessionRef = doc(db, 'nicSessions', sessionIdRef.current);
 
-    // Clean up listeners
-    if (unsubscribeLocationA.current) {
-      unsubscribeLocationA.current();
-      console.log(`🧹 Unsubscribed location listener for userA (${userAId}) on cancel`);
-    }
-    if (unsubscribeLocationB.current) {
-      unsubscribeLocationB.current();
-      console.log(`🧹 Unsubscribed location listener for userB (${userBId}) on cancel`);
-    }
-    if (unsubscribeSession.current) {
-      unsubscribeSession.current();
-      console.log(`🧹 Unsubscribed session listener on cancel`);
-    }
+    // 🧹 Clean up listeners safely with optional chaining
+    unsubscribeLocationA.current?.();
+    console.log(`🧹 Unsubscribed location listener for userA (${userAId}) on cancel`);
+
+    unsubscribeLocationB.current?.();
+    console.log(`🧹 Unsubscribed location listener for userB (${userBId}) on cancel`);
+
+    unsubscribeSession.current?.();
+    console.log(`🧹 Unsubscribed session listener on cancel`);
+
+    // 🧹 Clear heartbeat interval if running
     if (heartbeatIntervalRef.current) {
       console.log("🕒 heartbeatIntervalRef before cancel:", heartbeatIntervalRef.current);
       clearInterval(heartbeatIntervalRef.current);
       heartbeatIntervalRef.current = null;
       console.log(`🧹 Cleared heartbeat interval for ${currentUserId} on cancel`);
     }
-
-
     // Fetch latest user data
     const userAData = (await getDoc(userADocRef)).data();
     const userBData = (await getDoc(userBDocRef)).data();
@@ -686,7 +693,7 @@ const handleCancel = async () => {
     });
 
     navigation.navigate('Tabs', { screen: 'Home' });
-
+    hasNavigated.current = false;
   } catch (error) {
     console.error('❌ Error cancelling NicQuest session:', error);
   }
@@ -944,7 +951,7 @@ const handleAlertOk = async () => {
                   } catch (error) {
                     console.error('Error submitting rating:', error);
                   }
-
+                  hasNavigated.current = false;
                   setShowRatingModal(false);
                   navigation.navigate('Tabs', { screen: 'Home' });
                 }}

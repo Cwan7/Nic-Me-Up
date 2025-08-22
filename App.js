@@ -20,6 +20,7 @@ import SettingsScreen from './screens/Tabs/SettingsScreen';
 import ProfileScreen from './screens/Tabs/ProfileScreen';
 import NicQuestWaitingScreen from './screens/NicQuestWaitingScreen';
 import NicAssistScreen from './screens/NicAssistScreen';
+import { useHasNavigated } from "./NavContext";
 import { FontAwesome } from 'react-native-vector-icons';
 
 
@@ -70,9 +71,9 @@ export default function App() {
   const [notification, setNotification] = useState(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const isInitialMount = useRef(true);
-  const hasNavigated = useRef(false);
   const navigationRef = useRef();
   const locationSubscription = useRef(null);
+  const hasNavigated = useHasNavigated();
 
 const CustomStarRating = ({ rating = 5, size = 20 }) => {
   const stars = [];
@@ -402,7 +403,7 @@ const handleModalAction = async (action) => {
 }
       console.log(`✅ NicAssist selected for user ${notification?.userId} (session ${sessionId})`);
 
-      hasNavigated.current = true;
+      hasNavigated.current = true
       navigationRef.current?.navigate('NicAssist', {
         userAId: notification.userId,
         userBId: auth.currentUser.uid,
@@ -423,7 +424,6 @@ const handleModalAction = async (action) => {
   }
 
   setIsModalVisible(false);
-  if (action === 'NicAssist') hasNavigated.current = false;
 };
 
 
