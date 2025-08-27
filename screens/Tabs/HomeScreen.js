@@ -53,7 +53,7 @@ export const sendNicQuestNotification = async (userName, currentUserId, otherUse
       console.log('⚠️ Not sending notification: distance too far or no expoPushToken, token:', otherUserData.expoPushToken);
     }
   } catch (error) {
-    console.error('❌ Error sending NicQuest notification:', error);
+    console.error('❌ Error sending NicMeUp notification:', error);
   }
 };
 
@@ -314,7 +314,7 @@ export default function HomeScreen({ route }) {
   }, [isFocused]);
 
 const handleNicQuest = async () => {
-  console.log(`📲 ${userName} NicQuest button pressed, userLocation:`, userLocation, 'questDistance:', questDistance);
+  console.log(`📲 ${userName} NicMeUp button pressed, userLocation:`, userLocation, 'questDistance:', questDistance);
   const currentUser = auth.currentUser;
   if (!currentUser || !userLocation) {
     console.log('⛔ No currentUser or userLocation');
@@ -394,7 +394,7 @@ const handleNicQuest = async () => {
     });
 
     if (notifiedUsers.length > 0 || nearestAssist) {
-      console.log(`📬 NicQuest sent to users: ${notifiedUsers.map(n => n.userId).join(', ')}, nearestAssist:`, nearestAssist);
+      console.log(`📬 NicMeUp sent to users: ${notifiedUsers.map(n => n.userId).join(', ')}, nearestAssist:`, nearestAssist);
 
       // ✅ Create /nicSessions/{sessionId} document
       const sessionRef = doc(db, 'nicSessions', sessionId);
@@ -429,7 +429,7 @@ const handleNicQuest = async () => {
       Alert.alert('No Available Users', 'No active NicAssists or recent users within range.');
     }
   } catch (error) {
-    console.error('❌ Error sending NicQuest:', error);
+    console.error('❌ Error sending NicMeUp:', error);
     await updateDoc(doc(db, 'users', currentUser.uid), { 'NicMeUp.sessionId': "" }, { merge: true });
   }
 };
@@ -443,10 +443,10 @@ const handleNicQuest = async () => {
           Hey
           <Text style={styles.username}> {userName}</Text>! Need a pouch?
         </Text>
-        <Text style={styles.subText}>Tap to send a NicQuest to nearby users.</Text>
+        <Text style={styles.subText}>Tap to send a NicMeUp to nearby users.</Text>
 
         <TouchableOpacity style={styles.nicQuestButton} onPress={handleNicQuest}>
-          <Text style={styles.text}>NicQuest</Text>
+          <Text style={styles.text}>NicMeUp</Text>
         </TouchableOpacity>
 
         {region ? (
@@ -558,7 +558,7 @@ const handleNicQuest = async () => {
                   <View style={styles.usersContainer}>
                     <View style={styles.userCard}>
                       <Text style={styles.usernameActivity}>{userA.displayName}</Text>
-                      <Text style={styles.roleLabel}>NicQuest</Text>
+                      <Text style={styles.roleLabel}>NicMeUp</Text>
                     </View>
                     <View style={styles.vsContainer}>
                       <Text style={styles.vsText}>→</Text>

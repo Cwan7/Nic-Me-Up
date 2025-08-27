@@ -15,8 +15,8 @@ const CancelAlert = ({ visible, onOk }) => {
     if (visible) {
       console.log("🚨 Alert shown once");
       Alert.alert(
-        "NicQuest Canceled",
-        "The NicQuest session has been canceled.",
+        "NicMeUp Canceled",
+        "The NicMeUp session has been canceled.",
         [
           {
             text: "OK",
@@ -182,7 +182,7 @@ const submitRating = async (targetUserId, rating, sessionId) => {
       to: targetToken,
       sound: "default",
       title: "⭐ You got a new review!",
-      body: "Your NicQuest partner just left you feedback.",
+      body: "Your NicMeUp partner just left you feedback.",
       data: { type: "review" },
     };
 
@@ -695,7 +695,7 @@ const handleCancel = async () => {
     navigation.navigate('Tabs', { screen: 'Home' });
     hasNavigated.current = false;
   } catch (error) {
-    console.error('❌ Error cancelling NicQuest session:', error);
+    console.error('❌ Error cancelling NicMeUp session:', error);
   }
 };
 
@@ -750,7 +750,7 @@ const handleAlertOk = async () => {
       {userAData && userBData && nicAssistLat && nicAssistLng && (
         <View>
           <View style={styles.card}>
-            <Text style={styles.title}>{isUserA ? 'NicQuest' : 'NicAssist'} Session</Text>
+            <Text style={styles.title}>{isUserA ? 'NicMeUp' : 'NicAssist'} Session</Text>
             <View style={styles.usersContainer}>
               <View style={styles.userCard}>
                 {userAProfile?.photoURL ? (
@@ -762,7 +762,7 @@ const handleAlertOk = async () => {
                     </Text>
                   </View>
                 )}
-                <Text style={styles.roleLabel}>{isUserA ? 'You' : 'NicQuest'}</Text>
+                <Text style={styles.roleLabel}>{isUserA ? 'You' : 'NicMeUp'}</Text>
                 <Text style={styles.username}>{userAData?.username || 'Unknown'}</Text>
               </View>
 
@@ -795,7 +795,7 @@ const handleAlertOk = async () => {
               {showCompletionPrompt ? (
                 <>
                   <Text style={styles.completedHeader}>
-                    {currentUserId === userAId ? 'NicQuest Completed?' : 'NicAssist Completed?'}
+                    {currentUserId === userAId ? 'NicMeUp Completed?' : 'NicAssist Completed?'}
                   </Text>
                   <TouchableOpacity
                     style={styles.completedButton}
@@ -888,7 +888,7 @@ const handleAlertOk = async () => {
         </View>
       )}
       <TouchableOpacity style={styles.bottomButton} onPress={handleCancel}>
-        <Text style={styles.buttonText}>{isUserA ? 'Cancel NicQuest' : 'Cancel NicAssist'}</Text>
+        <Text style={styles.buttonText}>{isUserA ? 'Cancel NicMeUp' : 'Cancel NicAssist'}</Text>
       </TouchableOpacity>
       <CancelAlert visible={showCancelAlert} onOk={handleAlertOk} userId={currentUserId} />
       {/* Ratings Modal */}
@@ -901,7 +901,7 @@ const handleAlertOk = async () => {
         <View style={styles.ratingModalContainer}>
           <View style={styles.ratingModalContent}>
             <Text style={styles.ratingModalTitle}>
-              {currentUserId === userAId ? 'How was your NicQuest?' : 'How was your NicAssist?'}
+              {currentUserId === userAId ? 'How was your NicMeUp?' : 'How was your NicAssist?'}
             </Text>
 
             {(!isUserA ? userAData?.photoURL : userBData?.photoURL) ? (

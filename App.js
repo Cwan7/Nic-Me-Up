@@ -136,7 +136,7 @@ const CustomStarRating = ({ rating = 5, size = 20 }) => {
       await setDoc(userDocRef, {
         flavors: userDoc.exists() ? userDoc.data().flavors : 'Random',
         nicQuestDistance: userDoc.exists() ? userDoc.data().nicQuestDistance : 400,
-        notes: userDoc.exists() ? userDoc.data().notes : 'Notes for NicQuest',
+        notes: userDoc.exists() ? userDoc.data().notes : 'Notes for NicMeUp',
         photoURL: userDoc.exists() ? userDoc.data().photoURL : null,
         pouchType: userDoc.exists() ? userDoc.data().pouchType : 'Random',
         strength: userDoc.exists() ? userDoc.data().strength : '3mg-6mg',
@@ -239,7 +239,7 @@ const CustomStarRating = ({ rating = 5, size = 20 }) => {
           const { data } = response.notification.request.content;
           if (data?.type === 'NicQuest' && data.userId !== auth.currentUser?.uid) {
             const timestamp = new Date().toISOString();
-            console.log(`[${timestamp}] Initial NicQuest on launch for userId:`, data.userId, 'Notification Data:', data);
+            console.log(`[${timestamp}] Initial NicMeUp on launch for userId:`, data.userId, 'Notification Data:', data);
             setNotification(data);
             setIsModalVisible(true);
           }
@@ -300,7 +300,7 @@ const handleModalAction = async (action) => {
 
       // already assisted?
       if (userAData?.NicMeUp?.nicQuestAssistedBy) {
-        Alert.alert('NicQuest Already Assisted!', 'This NicQuest has already been assisted by another user.',
+        Alert.alert('NicMeUp Already Assisted!', 'This NicMeUp has already been assisted by another user.',
           [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
         );
         return;
@@ -332,7 +332,7 @@ const handleModalAction = async (action) => {
       }
 
       if (!sessionId) {
-        Alert.alert('NicQuest Unavailable', 'This NicQuest is no longer available.',
+        Alert.alert('NicMeUp Unavailable', 'This NicMeUp is no longer available.',
           [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
         );
         return;
@@ -342,7 +342,7 @@ const handleModalAction = async (action) => {
       const sessionRef = doc(db, 'nicSessions', sessionId);
       const sessionSnap = await getDoc(sessionRef);
       if (!sessionSnap.exists() || sessionSnap.data().active === false) {
-        Alert.alert('NicQuest Unavailable', 'This NicQuest has been canceled or completed.',
+        Alert.alert('NicMeUp Unavailable', 'This NicMeUp has been canceled or completed.',
           [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
         );
         return;
@@ -353,7 +353,7 @@ const handleModalAction = async (action) => {
       const nicAssistLng = notification.nicAssistLng ?? notification.data?.nicAssistLng;
       if (nicAssistLat == null || nicAssistLng == null) {
         console.error('❌ Could not retrieve nicAssistLat or nicAssistLng from notification');
-        Alert.alert('Missing data', 'Unable to get location for this NicQuest.',
+        Alert.alert('Missing data', 'Unable to get location for this NicMeUp.',
           [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
         );
         return;
@@ -395,8 +395,8 @@ const handleModalAction = async (action) => {
 
       if (!finalSessionData || finalSessionData.active === false) {
         Alert.alert(
-          'NicQuest Unavailable',
-          'This NicQuest was canceled or completed while you were joining.',
+          'NicMeUp Unavailable',
+          'This NicMeUp was canceled or completed while you were joining.',
           [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
         );
         return; // stop navigation
@@ -415,12 +415,12 @@ const handleModalAction = async (action) => {
 
     } catch (error) {
       console.error('Error updating Firestore for NicAssist:', error);
-      Alert.alert('Error', 'Could not join NicQuest. Try again.',
+      Alert.alert('Error', 'Could not join NicMeUp. Try again.',
         [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
       );
     }
   } else if (action === 'Decline') {
-    console.log(`❌ Decline NicQuest for user ${notification?.userId}`);
+    console.log(`❌ Decline NicMeUp for user ${notification?.userId}`);
   }
 
   setIsModalVisible(false);
@@ -471,7 +471,7 @@ const handleModalAction = async (action) => {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>NicQuest from {notification?.displayName || 'Friend'}</Text>
+            <Text style={styles.modalTitle}>NicMeUp from {notification?.displayName || 'Friend'}</Text>
             {notification?.profilePhoto ? (
               <View style={styles.outerZynBorder}>
                 <View style={styles.innerWhiteBorder}>

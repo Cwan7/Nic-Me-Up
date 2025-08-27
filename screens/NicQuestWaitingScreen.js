@@ -18,7 +18,7 @@ export default function NicQuestWaitingScreen({ route }) {
       if (docSnap.exists()) {
         const session = docSnap.data();
         if (session.userBId && !hasNavigatedRef.current) {
-          console.log('✅ userB accepted NicQuest — navigating to NicAssistScreen');
+          console.log('✅ userB accepted NicMeUp — navigating to NicAssistScreen');
           hasNavigatedRef.current = true;
 
           // fetch photoURLs before navigating
@@ -60,7 +60,7 @@ export default function NicQuestWaitingScreen({ route }) {
       } else {
         console.log('⚠️ Session document deleted (possibly canceled)');
         if (!hasNavigatedRef.current) {
-          Alert.alert('Session Canceled', 'Your NicQuest was canceled or expired.');
+          Alert.alert('Session Canceled', 'Your NicMeUp was canceled or expired.');
           navigation.navigate('Tabs', { screen: 'Home' });
         }
       }
@@ -85,7 +85,7 @@ useEffect(() => {
     const nicMeUp = data?.NicMeUp;
 
     if (!hasNavigated && nicMeUp?.nicQuestAssistedBy && nicMeUp?.sessionId) {
-      console.log('🚀 NicQuest assisted by:', nicMeUp.nicQuestAssistedBy);
+      console.log('🚀 NicMeUp assisted by:', nicMeUp.nicQuestAssistedBy);
       hasNavigated = true; // prevent future triggers
       unsubscribe(); // stop listening once navigated
       navigation.navigate('NicAssist', {
@@ -105,7 +105,7 @@ useEffect(() => {
 
   const handleCancel = async () => {
     try {
-      console.log('🛑 NicQuest canceled by userA');
+      console.log('🛑 NicMeUp canceled by userA');
       // Delete the session
       await updateDoc(doc(db, 'nicSessions', sessionId), {
         active: false,
@@ -119,7 +119,7 @@ useEffect(() => {
 
       navigation.navigate('Tabs', { screen: 'Home' });
     } catch (error) {
-      console.error('Error canceling NicQuest:', error);
+      console.error('Error canceling NicMeUp:', error);
     }
   };
 
@@ -151,7 +151,7 @@ useEffect(() => {
         </TouchableOpacity>
       </View>
       <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
-        <Text style={styles.buttonText}>Cancel NicQuest</Text>
+        <Text style={styles.buttonText}>Cancel NicMeUp</Text>
       </TouchableOpacity>
     </View>
   );

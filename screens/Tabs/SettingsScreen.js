@@ -162,10 +162,10 @@ export default function SettingsScreen() {
     <View style={styles.content}>
       <Text style={styles.title}>Settings</Text>
       <View style={styles.settingsList}>
-        <Text style={styles.subheader}>NicQuest</Text>
+        <Text style={styles.subheader}>NicMeUp</Text>
         <View style={[styles.settingItem, styles.nicQuestSpacing]}>
           <View style={styles.labelRow}>
-            <Text style={styles.settingLabel}>Distance to a NicAssist</Text>
+            <Text style={styles.settingLabel}>Distance to an Assist</Text>
             <TouchableOpacity onPress={() => setShowPicker(!showPicker)} style={styles.valueButton}>
               <Text style={styles.selectedValue}>{`${distance}ft`}</Text>
             </TouchableOpacity>
