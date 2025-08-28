@@ -171,61 +171,29 @@ useEffect(() => {
 //-------------------END OF TERMS AND CONDITIONS-----------------------
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      if (!firebaseUser) return;
+  const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    setUser(firebaseUser);
+    if (!firebaseUser) return;
 
-      const token = (await Notifications.getExpoPushTokenAsync({ projectId: Constants.expoConfig.extra?.eas?.projectId })).data;
-      const userDocRef = doc(db, 'users', firebaseUser.uid);
-      const userDoc = await getDoc(userDocRef);
+    // --- user setup (always run, even before terms) ---
+    const token = (await Notifications.getExpoPushTokenAsync({ projectId: Constants.expoConfig.extra?.eas?.projectId })).data;
+    const userDocRef = doc(db, 'users', firebaseUser.uid);
+    const userDoc = await getDoc(userDocRef);
 
-      await setDoc(userDocRef, {
-        flavors: userDoc.exists() ? userDoc.data().flavors : 'Random',
-        nicQuestDistance: userDoc.exists() ? userDoc.data().nicQuestDistance : 400,
-        notes: userDoc.exists() ? userDoc.data().notes : 'Notes for NicMeUp',
-        photoURL: userDoc.exists() ? userDoc.data().photoURL : null,
-        pouchType: userDoc.exists() ? userDoc.data().pouchType : 'Random',
-        strength: userDoc.exists() ? userDoc.data().strength : '3mg-6mg',
-        expoPushToken: token,
-      }, { merge: true });
+    await setDoc(userDocRef, {
+      flavors: userDoc.exists() ? userDoc.data().flavors : 'Random',
+      nicQuestDistance: userDoc.exists() ? userDoc.data().nicQuestDistance : 400,
+      notes: userDoc.exists() ? userDoc.data().notes : 'Notes for NicMeUp',
+      photoURL: userDoc.exists() ? userDoc.data().photoURL : null,
+      pouchType: userDoc.exists() ? userDoc.data().pouchType : 'Random',
+      strength: userDoc.exists() ? userDoc.data().strength : '3mg-6mg',
+      expoPushToken: token,
+    }, { merge: true });
+  });
 
-      const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+  return () => unsubscribe();
+}, []);
 
-      let backgroundStatus = 'denied';
-
-      // Only ask for background permission if foreground was granted
-      if (foregroundStatus === 'granted') {
-        const bgPerm = await Location.requestBackgroundPermissionsAsync();
-        backgroundStatus = bgPerm.status;
-      }
-
-      // Allow tracking if foreground is granted (While Using) OR both are granted (Always)
-      const granted = foregroundStatus === 'granted';
-      setLocationPermission(granted ? 'granted' : 'denied');
-
-      if (granted) {
-        const initialLoc = Device.isDevice
-          ? await Location.getCurrentPositionAsync({})
-          : { coords: { latitude: 39.74053877190388, longitude: -104.970766737421, timestamp: new Date().toISOString() } };
-
-        await setDoc(userDocRef, {
-          location: {
-            latitude: initialLoc.coords.latitude,
-            longitude: initialLoc.coords.longitude,
-            timestamp: initialLoc.timestamp || new Date().toISOString(),
-          }
-        }, { merge: true });
-      } else {
-        Alert.alert(
-          'Location Permission Needed',
-          'Please enable location in Settings under Privacy > Location Services.',
-          [{ text: 'OK' }]
-        );
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -494,12 +462,40 @@ return (
                     termsAcceptedVersion: latestTerms.version,
                     termsAcceptedAt: serverTimestamp(),
                   });
-                  setNeedsToAcceptTerms(false);
+
+                  // ✅ NOW ask for location
+                  const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+
+                  if (foregroundStatus === 'granted') {
+                    const initialLoc = Device.isDevice
+                      ? await Location.getCurrentPositionAsync({})
+                      : { coords: { latitude: 39.74053877190388, longitude: -104.970766737421, timestamp: new Date().toISOString() } };
+
+                    await setDoc(userRef, {
+                      location: {
+                        latitude: initialLoc.coords.latitude,
+                        longitude: initialLoc.coords.longitude,
+                        timestamp: initialLoc.timestamp || new Date().toISOString(),
+                      }
+                    }, { merge: true });
+
+                    setLocationPermission('granted');
+                  } else {
+                    setLocationPermission('denied');
+                    Alert.alert(
+                      'Location Permission Needed',
+                      'Please enable location in Settings under Privacy > Location Services.',
+                      [{ text: 'OK' }]
+                    );
+                  }
+
+                  setNeedsToAcceptTerms(false); // close modal
                 } catch (err) {
                   console.error("Error saving terms acceptance:", err);
                   Alert.alert("Error", "Could not save your acceptance. Please try again.");
                 }
               }}
+
             >
               <Text style={styles.termsButtonText}>Accept Terms & Conditions</Text>
             </TouchableOpacity>
