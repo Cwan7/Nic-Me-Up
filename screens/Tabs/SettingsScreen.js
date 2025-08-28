@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Text, View, TextInput, FlatList, StyleSheet, TouchableOpacity, Platform, Alert, Keyboard, Modal } from 'react-native';
+import { Text, View, TextInput, FlatList, StyleSheet, ScrollView, TouchableOpacity, Platform, Alert, Keyboard, Modal } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { auth, db } from '../../firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
@@ -158,7 +158,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
     <View style={styles.content}>
       <Text style={styles.title}>Settings</Text>
       <View style={styles.settingsList}>
@@ -268,7 +268,7 @@ export default function SettingsScreen() {
         <View style={styles.modalContent}>
           <Text style={styles.modalTitle}>Add NicAssist Address</Text>
           <TouchableOpacity
-            style={[styles.currentAddressButton, { backgroundColor: '#60a8b8' }]}
+            style={[styles.currentAddressButton, { backgroundColor: '#fff' }]}
             onPress={async () => {
               const user = auth.currentUser;
               if (user) {
@@ -387,7 +387,7 @@ export default function SettingsScreen() {
         </View>
       </View>
     </Modal>
-  </View>
+  </ScrollView>
   );
 }
 
