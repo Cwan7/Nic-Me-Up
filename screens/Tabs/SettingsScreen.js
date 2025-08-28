@@ -217,41 +217,49 @@ export default function SettingsScreen() {
             <Text style={styles.AddAddress}>Add NicAssist Address</Text>
           </View>
         )}
-        {nicAssists.map((assist, index) => (
-          <View style={styles.settingItem} key={index}>
-            <View style={styles.addressRow}>
-              <Text style={styles.addressDisplay}>
-                {assist.Name && assist.Name !== null ? assist.Name : assist.NicAssistAddress}
-                </Text>
-              <TouchableOpacity onPress={() => toggleActive(index)}>
-                <MaterialIcons
-                  name={assist.Active ? 'toggle-on' : 'toggle-off'}
-                  size={40}
-                  color={assist.Active ? '#60a8b8' : '#adadad'}
-                />
-              </TouchableOpacity>
-            </View>
-            {isEditing && (
-              <View style={styles.editingContainer}>
-                <TouchableOpacity
-                  style={styles.renameButton}
-                  onPress={() => renameAddress(index)}
-                >
-                  <Text style={styles.deleteText}>Rename Address</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.deleteButton}
-                  onPress={() => deleteAddress(index)}
-                >
-                  <Text style={styles.deleteText}>Delete Address</Text>
+        {nicAssists.map((assist, index) => {
+          let displayAddress = "";
+          if (assist.Name && assist.Name !== null) {
+            displayAddress = assist.Name; 
+          } else if (assist.NicAssistAddress === "Current Location") {
+            displayAddress = `${assist.NicAssistLat.toFixed(5)}, ${assist.NicAssistLng.toFixed(5)}`;
+          } else {
+            displayAddress = assist.NicAssistAddress;
+          }
+
+          return (
+            <View style={styles.settingItem} key={index}>
+              <View style={styles.addressRow}>
+                <Text style={styles.addressDisplay}>{displayAddress}</Text>
+                <TouchableOpacity onPress={() => toggleActive(index)}>
+                  <MaterialIcons
+                    name={assist.Active ? 'toggle-on' : 'toggle-off'}
+                    size={40}
+                    color={assist.Active ? '#60a8b8' : '#adadad'}
+                  />
                 </TouchableOpacity>
               </View>
-            )}
-          </View>
-        ))}
+              {isEditing && (
+                <View style={styles.editingContainer}>
+                  <TouchableOpacity
+                    style={styles.renameButton}
+                    onPress={() => renameAddress(index)}
+                  >
+                    <Text style={styles.deleteText}>Rename Address</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={() => deleteAddress(index)}
+                  >
+                    <Text style={styles.deleteText}>Delete Address</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )
+        })}
       </View>
     </View>
-
     {/* Existing Add Modal */}
     <Modal
       animationType="slide"

@@ -22,7 +22,7 @@ import NicQuestWaitingScreen from './screens/NicQuestWaitingScreen';
 import NicAssistScreen from './screens/NicAssistScreen';
 import { useHasNavigated } from "./NavContext";
 import { FontAwesome } from 'react-native-vector-icons';
-
+import Logo5 from './assets/Logo5.png';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -31,7 +31,7 @@ const Header = ({ user, navigation }) => {
   return (
     <SafeAreaView style={{ backgroundColor: '#fff' }} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>NicMeUp</Text>
+        <Image source={Logo5} style={styles.headerTitle} resizeMode="contain" />
         {user && (
           <Text style={styles.headerUser}>{user.displayName || 'User'}</Text>
         )}
@@ -609,13 +609,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#dcdcdc',
+    paddingRight: 15,
+    paddingLeft: 10,
   },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#000' },
-  headerUser: { fontSize: 16, color: '#4d8a9b' },
+  headerTitle: { width: 40, height: 40},
+  headerUser: { fontSize: 16, color: '#000' },
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
