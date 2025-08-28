@@ -8,7 +8,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Modal, Image, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Modal, Image, ScrollView, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Device from 'expo-device';
@@ -74,6 +74,8 @@ export default function App() {
   const navigationRef = useRef();
   const locationSubscription = useRef(null);
   const hasNavigated = useHasNavigated();
+  const [needsToAcceptTerms, setNeedsToAcceptTerms] = useState(false);
+  const [latestTerms, setLatestTerms] = useState(null);
 
 const CustomStarRating = ({ rating = 5, size = 20 }) => {
   const stars = [];
@@ -122,7 +124,51 @@ const CustomStarRating = ({ rating = 5, size = 20 }) => {
 
   return <View style={{ flexDirection: 'row', marginTop: 5 }}>{stars}</View>;
 };
+//-----------------------------TERMS & Conditions--------------------------
+async function getLatestTerms() {
+  const termsRef = doc(db, "appConfig", "terms");
+  const termsSnap = await getDoc(termsRef);
 
+  if (termsSnap.exists()) {
+    return termsSnap.data(); // { version, text, lastUpdated }
+  } else {
+    console.error("No terms document found!");
+    return null;
+  }
+}
+// useEffect for terms/condition
+useEffect(() => {
+  const checkTerms = async () => {
+    if (!user) return; // only check after login
+    
+    try {
+      // 1. Load latest terms doc
+      const termsRef = doc(db, "appConfig", "terms");
+      const termsSnap = await getDoc(termsRef);
+      if (!termsSnap.exists()) return;
+      const termsData = termsSnap.data();
+      setLatestTerms(termsData);
+
+      // 2. Load user doc
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+      const userData = userSnap.data();
+
+      // 3. Decide if they need to accept
+      if (
+        !userData?.termsAcceptedVersion ||
+        userData.termsAcceptedVersion !== termsData.version
+      ) {
+        setNeedsToAcceptTerms(true);
+      }
+    } catch (err) {
+      console.error("Error checking terms:", err);
+    }
+  };
+
+  checkTerms();
+}, [user]); // run when user logs in
+//-------------------END OF TERMS AND CONDITIONS-----------------------
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -427,84 +473,135 @@ const handleModalAction = async (action) => {
 };
 
 
-  return (
-    <NavigationContainer ref={navigationRef}>
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: true,
-          header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
-        }}
-      >
-        {user ? (
-          <>
-            <Stack.Screen name="Tabs" options={{ headerShown: false }}>
-              {() => <TabNavigator user={{ displayName: user?.displayName, uid: user?.uid }} />}
-            </Stack.Screen>
-            <Stack.Screen
-              name="NicQuestWaiting"
-              component={NicQuestWaitingScreen}
-              options={{
-                header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
-                headerRight: () => null,
+return (
+  <NavigationContainer ref={navigationRef}>
+    {needsToAcceptTerms ? (
+      // 🚧 Show only Terms if not yet accepted
+      <View style={styles.termsModalContainer}>
+        <View style={styles.termsModalContent}>
+          <Text style={styles.termsModalTitle}>Terms & Conditions</Text>
+          <ScrollView style={styles.scrollArea}>
+            <Text style={styles.termsText}>{latestTerms?.text}</Text>
+          </ScrollView>
+          <View style={styles.termsButtonContainer}>
+            <TouchableOpacity
+              style={styles.termsButton}
+              onPress={async () => {
+                if (!user || !latestTerms) return;
+                try {
+                  const userRef = doc(db, "users", user.uid);
+                  await updateDoc(userRef, {
+                    termsAcceptedVersion: latestTerms.version,
+                    termsAcceptedAt: serverTimestamp(),
+                  });
+                  setNeedsToAcceptTerms(false);
+                } catch (err) {
+                  console.error("Error saving terms acceptance:", err);
+                  Alert.alert("Error", "Could not save your acceptance. Please try again.");
+                }
               }}
-            />
-            <Stack.Screen
-              name="NicAssist"
-              component={NicAssistScreen}
-              options={{
-                header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
-              }}
-            />
-          </>
-        ) : (
-          <>
-            <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="CreateAccount" component={CreateAccountScreen} />
-          </>
-        )}
-      </Stack.Navigator>
-      <Modal
-        visible={isModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setIsModalVisible(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>NicMeUp from {notification?.displayName || 'Friend'}</Text>
-            {notification?.profilePhoto ? (
-              <View style={styles.outerZynBorder}>
-                <View style={styles.innerWhiteBorder}>
-                  <Image
-                    source={{ uri: notification.profilePhoto }}
-                    style={styles.profilePhoto}
-                    resizeMode="cover"
-                    onError={(e) => console.log('Image load error:', e.nativeEvent.error)}
-                  />
-                </View>
-              </View>
-            ) : (
-              <View style={styles.profilePlaceholder}>
-                <Text style={styles.placeholderText}>
-                  {(notification?.displayName && notification.displayName.charAt(0)) || 'F'}
-                </Text>
-              </View>
-            )}
-            <CustomStarRating rating={notification?.userRating ?? 5} size={20} />
-            <Text style={styles.modalMessage}>Someone needs a pouch!</Text>
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity style={styles.buttonNicAssist} onPress={() => handleModalAction('NicAssist')}>
-                <Text style={styles.buttonText}>NicAssist</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.buttonDecline} onPress={() => handleModalAction('Decline')}>
-                <Text style={styles.buttonText}>Decline</Text>
-              </TouchableOpacity>
-            </View>
+            >
+              <Text style={styles.termsButtonText}>Accept Terms & Conditions</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </Modal>
-    </NavigationContainer>
-  );
+      </View>
+    ) : (
+      <>
+        {/* ✅ Your App Navigator */}
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: true,
+            header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
+          }}
+        >
+          {user ? (
+            <>
+              <Stack.Screen name="Tabs" options={{ headerShown: false }}>
+                {() => <TabNavigator user={{ displayName: user?.displayName, uid: user?.uid }} />}
+              </Stack.Screen>
+              <Stack.Screen
+                name="NicQuestWaiting"
+                component={NicQuestWaitingScreen}
+                options={{
+                  header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
+                  headerRight: () => null,
+                }}
+              />
+              <Stack.Screen
+                name="NicAssist"
+                component={NicAssistScreen}
+                options={{
+                  header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
+                }}
+              />
+            </>
+          ) : (
+            <>
+              <Stack.Screen name="Login" component={LoginScreen} />
+              <Stack.Screen name="CreateAccount" component={CreateAccountScreen} />
+            </>
+          )}
+        </Stack.Navigator>
+
+        {/* ✅ NicAssist modal still available */}
+        <Modal
+          visible={isModalVisible}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setIsModalVisible(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>
+                NicMeUp from {notification?.displayName || "Friend"}
+              </Text>
+              {notification?.profilePhoto ? (
+                <View style={styles.outerZynBorder}>
+                  <View style={styles.innerWhiteBorder}>
+                    <Image
+                      source={{ uri: notification.profilePhoto }}
+                      style={styles.profilePhoto}
+                      resizeMode="cover"
+                      onError={(e) =>
+                        console.log("Image load error:", e.nativeEvent.error)
+                      }
+                    />
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.profilePlaceholder}>
+                  <Text style={styles.placeholderText}>
+                    {(notification?.displayName &&
+                      notification.displayName.charAt(0)) ||
+                      "F"}
+                  </Text>
+                </View>
+              )}
+              <CustomStarRating rating={notification?.userRating ?? 5} size={20} />
+              <Text style={styles.modalMessage}>Someone needs a pouch!</Text>
+              <View style={styles.buttonContainer}>
+                <TouchableOpacity
+                  style={styles.buttonNicAssist}
+                  onPress={() => handleModalAction("NicAssist")}
+                >
+                  <Text style={styles.buttonText}>NicAssist</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.buttonDecline}
+                  onPress={() => handleModalAction("Decline")}
+                >
+                  <Text style={styles.buttonText}>Decline</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      </>
+    )}
+  </NavigationContainer>
+);
+
 }
 
 const styles = StyleSheet.create({
@@ -583,4 +680,44 @@ const styles = StyleSheet.create({
     marginHorizontal: 5,
   },
   buttonText: { color: '#fff', fontSize: 16 },
+  termsModalContainer: {
+  flex: 1,
+  justifyContent: 'center',
+  alignItems: 'center',
+  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  termsModalContent: {
+  backgroundColor: '#fff',
+  padding: 20,
+  borderRadius: 10,
+  alignItems: 'center',
+  width: '90%',
+  },
+  termsModalTitle: {
+  fontSize: 20,
+  fontWeight: 'bold',
+  marginBottom: 10,
+  },
+  scrollArea: {
+  maxHeight: 500,
+  },
+  termsText: {
+  fontSize: 12,
+  marginBottom: 20,
+  },
+  termsButtonContainer: {
+  width: '100%',
+  marginTop: 20,
+  },
+  termsButton: {
+  padding: 15,
+  backgroundColor: '#60a8b8',
+  borderRadius: 8,
+  alignItems: 'center',
+  },
+  termsButtonText: {
+  color: 'white',
+  textAlign: 'center',
+  fontSize: 16,
+  },
 });
