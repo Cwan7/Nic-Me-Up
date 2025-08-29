@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
   text: { fontSize: 16, textAlign: 'center', marginBottom: 10 },
   detailsContainer: { marginTop: 5 },
   detailText: { fontSize: 14, textAlign: 'center', marginVertical: 2 },
-  footer: { padding: 10, alignItems: 'center' },
+  footer: { padding: 20, alignItems: 'center' },
   button: { backgroundColor: '#1E90FF', padding: 12, borderRadius: 10, width: 200, alignItems: 'center' },
   buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
   dotsContainer: { flexDirection: 'row', justifyContent: 'center', paddingVertical: 5 },

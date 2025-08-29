@@ -31,7 +31,7 @@ export default function ProfileScreen() {
         if (docSnap.exists()) {
           const data = docSnap.data();
           setProfilePhoto(data.photoURL || null);
-          setUsername(data.username || user.displayName || '');
+          setUsername(user.displayName || '');
           setPouchType(data.pouchType || 'Random');
           setStrength(data.strength || '6mg');
           setFlavors(data.flavors || 'All');
@@ -107,38 +107,46 @@ export default function ProfileScreen() {
     return reauthenticateWithCredential(user, credential);
   };
 
-  const saveProfile = async () => {
-    if (user) {
-      try {
-        const userDocRef = doc(db, 'users', user.uid);
+const saveProfile = async () => {
+  if (user) {
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
 
-        // Update email if changed
-        if (email && email !== user.email) {
-          await reauthenticate(currentPassword);
-          await updateEmail(user, email);
-          console.log('Email updated successfully');
-        }
-
-        // Update Firestore with all fields
-        await setDoc(userDocRef, {
-          username,
-          pouchType,
-          strength,
-          flavors,
-          notes,
-          photoURL: profilePhoto,
-        }, { merge: true });
-
-        setIsEditing(false);
-        console.log('Profile saved to Firestore');
-      } catch (error) {
-        console.error('Save Profile Error:', error.message);
-        Alert.alert('Error', error.message.includes('requires-recent-login') 
-          ? 'Please enter your current password to update email.'
-          : 'Failed to save profile. Check logs for details.');
+      // Update email if changed
+      if (email && email !== user.email) {
+        await reauthenticate(currentPassword);
+        await updateEmail(user, email);
+        console.log('Email updated successfully');
       }
+
+      // ✅ Update Firebase Auth displayName
+      if (username && username !== user.displayName) {
+        await updateProfile(user, { displayName: username });
+        await user.reload();
+        console.log('Auth displayName updated:', username);
+      }
+
+      // Update Firestore with all fields
+      await setDoc(userDocRef, {
+        username,
+        pouchType,
+        strength,
+        flavors,
+        notes,
+        photoURL: profilePhoto,
+      }, { merge: true });
+
+      setIsEditing(false);
+      console.log('Profile saved to Firestore');
+    } catch (error) {
+      console.error('Save Profile Error:', error.message);
+      Alert.alert('Error', error.message.includes('requires-recent-login') 
+        ? 'Please enter your current password to update email.'
+        : 'Failed to save profile. Check logs for details.');
     }
-  };
+  }
+};
+
 
   const updateUserPassword = async () => {
     if (newPassword !== reenterPassword) {

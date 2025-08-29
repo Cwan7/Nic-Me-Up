@@ -144,7 +144,7 @@ async function getLatestTerms() {
 useEffect(() => {
   const checkTerms = async () => {
     if (!user) return; // only check after login
-    
+    if (!onboardingComplete) return;
     try {
       // 1. Load latest terms doc
       const termsRef = doc(db, "appConfig", "terms");
@@ -171,7 +171,7 @@ useEffect(() => {
   };
 
   checkTerms();
-}, [user]); // run when user logs in
+}, [user, onboardingComplete]); 
 //-------------------END OF TERMS AND CONDITIONS-----------------------
 
   useEffect(() => {
@@ -456,171 +456,201 @@ useEffect(() => {
 
 return (
   <NavigationContainer ref={navigationRef}>
-    {needsToAcceptTerms ? (
-      // 🚧 Show only Terms if not yet accepted
-      <View style={styles.termsModalContainer}>
-        <View style={styles.termsModalContent}>
-          <Text style={styles.termsModalTitle}>Terms & Conditions</Text>
-          <ScrollView style={styles.scrollArea}>
-            <Text style={styles.termsText}>{latestTerms?.text}</Text>
-          </ScrollView>
-          <View style={styles.termsButtonContainer}>
-            <TouchableOpacity
-              style={styles.termsButton}
-              onPress={async () => {
-                if (!user || !latestTerms) return;
-                try {
-                  const userRef = doc(db, "users", user.uid);
-                  await updateDoc(userRef, {
-                    termsAcceptedVersion: latestTerms.version,
-                    termsAcceptedAt: serverTimestamp(),
-                  });
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: true,
+        header: ({ navigation, route }) => (
+          <Header user={user} navigation={navigation} />
+        ),
+      }}
+    >
+      {!user ? (
+        <>
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="CreateAccount" component={CreateAccountScreen} />
+        </>
+      ) : !onboardingComplete ? (
+        // 🚀 Show Info first
+        <Stack.Screen
+          name="InfoScreen"
+          component={InfoScreen}
+          initialParams={{ fromOnboarding: true }}
+          options={{ headerShown: false }}
+        />
+      ) : needsToAcceptTerms ? (
+        // 🚀 Show Terms as a dedicated screen (not messy overlay)
+        <Stack.Screen
+          name="TermsScreen"
+          options={{ headerShown: false }}
+        >
+          {() => (
+            <View style={styles.termsModalContainer}>
+              <View style={styles.termsModalContent}>
+                <Text style={styles.termsModalTitle}>Terms & Conditions</Text>
+                <ScrollView style={styles.scrollArea}>
+                  <Text style={styles.termsText}>{latestTerms?.text}</Text>
+                </ScrollView>
+                <View style={styles.termsButtonContainer}>
+                  <TouchableOpacity
+                    style={styles.termsButton}
+                    onPress={async () => {
+                      if (!user || !latestTerms) return;
+                      try {
+                        const userRef = doc(db, "users", user.uid);
+                        await updateDoc(userRef, {
+                          termsAcceptedVersion: latestTerms.version,
+                          termsAcceptedAt: serverTimestamp(),
+                        });
 
-                  // ✅ NOW ask for location
-                  const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+                        // ✅ ask for location now
+                        const { status: foregroundStatus } =
+                          await Location.requestForegroundPermissionsAsync();
 
-                  if (foregroundStatus === 'granted') {
-                    const initialLoc = Device.isDevice
-                      ? await Location.getCurrentPositionAsync({})
-                      : { coords: { latitude: 39.74053877190388, longitude: -104.970766737421, timestamp: new Date().toISOString() } };
+                        if (foregroundStatus === "granted") {
+                          const initialLoc = Device.isDevice
+                            ? await Location.getCurrentPositionAsync({})
+                            : {
+                                coords: {
+                                  latitude: 39.74053877190388,
+                                  longitude: -104.970766737421,
+                                  timestamp: new Date().toISOString(),
+                                },
+                              };
 
-                    await setDoc(userRef, {
-                      location: {
-                        latitude: initialLoc.coords.latitude,
-                        longitude: initialLoc.coords.longitude,
-                        timestamp: initialLoc.timestamp || new Date().toISOString(),
+                          await setDoc(
+                            userRef,
+                            {
+                              location: {
+                                latitude: initialLoc.coords.latitude,
+                                longitude: initialLoc.coords.longitude,
+                                timestamp:
+                                  initialLoc.timestamp ||
+                                  new Date().toISOString(),
+                              },
+                            },
+                            { merge: true }
+                          );
+
+                          setLocationPermission("granted");
+                        } else {
+                          setLocationPermission("denied");
+                          Alert.alert(
+                            "Location Permission Needed",
+                            "Please enable location in Settings under Privacy > Location Services.",
+                            [{ text: "OK" }]
+                          );
+                        }
+
+                        setNeedsToAcceptTerms(false);
+                      } catch (err) {
+                        console.error("Error saving terms acceptance:", err);
+                        Alert.alert(
+                          "Error",
+                          "Could not save your acceptance. Please try again."
+                        );
                       }
-                    }, { merge: true });
+                    }}
+                  >
+                    <Text style={styles.termsButtonText}>
+                      Accept Terms & Conditions
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
+        </Stack.Screen>
+      ) : (
+        // 🚀 App after onboarding + terms
+        <>
+          <Stack.Screen name="Tabs" options={{ headerShown: false }}>
+            {() => (
+              <TabNavigator
+                user={{ displayName: user?.displayName, uid: user?.uid }}
+              />
+            )}
+          </Stack.Screen>
 
-                    setLocationPermission('granted');
-                  } else {
-                    setLocationPermission('denied');
-                    Alert.alert(
-                      'Location Permission Needed',
-                      'Please enable location in Settings under Privacy > Location Services.',
-                      [{ text: 'OK' }]
-                    );
+          <Stack.Screen
+            name="NicQuestWaiting"
+            component={NicQuestWaitingScreen}
+            options={{
+              header: ({ navigation, route }) => (
+                <Header user={user} navigation={navigation} />
+              ),
+              headerRight: () => null,
+            }}
+          />
+
+          <Stack.Screen
+            name="NicAssist"
+            component={NicAssistScreen}
+            options={{
+              header: ({ navigation, route }) => (
+                <Header user={user} navigation={navigation} />
+              ),
+            }}
+          />
+        </>
+      )}
+    </Stack.Navigator>
+
+    {/* ✅ NicAssist modal still available */}
+    <Modal
+      visible={isModalVisible}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setIsModalVisible(false)}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>
+            NicMeUp from {notification?.displayName || "Friend"}
+          </Text>
+          {notification?.profilePhoto ? (
+            <View style={styles.outerZynBorder}>
+              <View style={styles.innerWhiteBorder}>
+                <Image
+                  source={{ uri: notification.profilePhoto }}
+                  style={styles.profilePhoto}
+                  resizeMode="cover"
+                  onError={(e) =>
+                    console.log("Image load error:", e.nativeEvent.error)
                   }
-
-                  setNeedsToAcceptTerms(false); // close modal
-                } catch (err) {
-                  console.error("Error saving terms acceptance:", err);
-                  Alert.alert("Error", "Could not save your acceptance. Please try again.");
-                }
-              }}
-
+                />
+              </View>
+            </View>
+          ) : (
+            <View style={styles.profilePlaceholder}>
+              <Text style={styles.placeholderText}>
+                {(notification?.displayName &&
+                  notification.displayName.charAt(0)) ||
+                  "F"}
+              </Text>
+            </View>
+          )}
+          <CustomStarRating rating={notification?.userRating ?? 5} size={20} />
+          <Text style={styles.modalMessage}>Someone needs a pouch!</Text>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={styles.buttonNicAssist}
+              onPress={() => handleModalAction("NicAssist")}
             >
-              <Text style={styles.termsButtonText}>Accept Terms & Conditions</Text>
+              <Text style={styles.buttonText}>Assist</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.buttonDecline}
+              onPress={() => handleModalAction("Decline")}
+            >
+              <Text style={styles.buttonText}>Decline</Text>
             </TouchableOpacity>
           </View>
         </View>
       </View>
-    ) : (
-      <>
-        {/* ✅ Your App Navigator */}
-        <Stack.Navigator
-          screenOptions={{
-            headerShown: true,
-            header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
-          }}
-        >
-          {user ? (
-            !onboardingComplete ? (
-              <Stack.Screen 
-                name="InfoScreen" 
-                component={InfoScreen} 
-                initialParams={{ fromOnboarding: true }}
-                options={{ headerShown: false }} 
-              />
-            ) : (
-              <>
-                <Stack.Screen name="Tabs" options={{ headerShown: false }}>
-                  {() => <TabNavigator user={{ displayName: user?.displayName, uid: user?.uid }} />}
-                </Stack.Screen>
-                <Stack.Screen
-                  name="NicQuestWaiting"
-                  component={NicQuestWaitingScreen}
-                  options={{
-                    header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
-                    headerRight: () => null,
-                  }}
-                />
-                <Stack.Screen
-                  name="NicAssist"
-                  component={NicAssistScreen}
-                  options={{
-                    header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
-                  }}
-                />
-              </>
-            )
-          ) : (
-            <>
-              <Stack.Screen name="Login" component={LoginScreen} />
-              <Stack.Screen name="CreateAccount" component={CreateAccountScreen} />
-            </>
-          )}
-        </Stack.Navigator>
-
-        {/* ✅ NicAssist modal still available */}
-        <Modal
-          visible={isModalVisible}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setIsModalVisible(false)}
-        >
-          <View style={styles.modalContainer}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>
-                NicMeUp from {notification?.displayName || "Friend"}
-              </Text>
-              {notification?.profilePhoto ? (
-                <View style={styles.outerZynBorder}>
-                  <View style={styles.innerWhiteBorder}>
-                    <Image
-                      source={{ uri: notification.profilePhoto }}
-                      style={styles.profilePhoto}
-                      resizeMode="cover"
-                      onError={(e) =>
-                        console.log("Image load error:", e.nativeEvent.error)
-                      }
-                    />
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.profilePlaceholder}>
-                  <Text style={styles.placeholderText}>
-                    {(notification?.displayName &&
-                      notification.displayName.charAt(0)) ||
-                      "F"}
-                  </Text>
-                </View>
-              )}
-              <CustomStarRating rating={notification?.userRating ?? 5} size={20} />
-              <Text style={styles.modalMessage}>Someone needs a pouch!</Text>
-              <View style={styles.buttonContainer}>
-                <TouchableOpacity
-                  style={styles.buttonNicAssist}
-                  onPress={() => handleModalAction("NicAssist")}
-                >
-                  <Text style={styles.buttonText}>Assist</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.buttonDecline}
-                  onPress={() => handleModalAction("Decline")}
-                >
-                  <Text style={styles.buttonText}>Decline</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-      </>
-    )}
+    </Modal>
   </NavigationContainer>
-);
+)};
 
-}
 
 const styles = StyleSheet.create({
   header: {
