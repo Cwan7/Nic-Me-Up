@@ -750,7 +750,7 @@ const handleAlertOk = async () => {
       {userAData && userBData && nicAssistLat && nicAssistLng && (
         <View>
           <View style={styles.card}>
-            <Text style={styles.title}>{isUserA ? 'NicMeUp' : 'NicAssist'} Session</Text>
+            <Text style={styles.title}>NicMeUp Session</Text>
             <View style={styles.usersContainer}>
               <View style={styles.userCard}>
                 {userAProfile?.photoURL ? (
@@ -762,7 +762,7 @@ const handleAlertOk = async () => {
                     </Text>
                   </View>
                 )}
-                <Text style={styles.roleLabel}>{isUserA ? 'You' : 'NicMeUp'}</Text>
+                <Text style={styles.roleLabel}>NicMeUp</Text>
                 <Text style={styles.username}>{userAData?.username || 'Unknown'}</Text>
               </View>
 
@@ -780,7 +780,7 @@ const handleAlertOk = async () => {
                     </Text>
                   </View>
                 )}
-                <Text style={styles.roleLabel}>{isUserA ? 'NicAssist' : 'You'}</Text>
+                <Text style={styles.roleLabel}>Assist</Text>
                 <Text style={styles.username}>{userBData?.username || 'Unknown'}</Text>
               </View>
 
@@ -795,7 +795,7 @@ const handleAlertOk = async () => {
               {showCompletionPrompt ? (
                 <>
                   <Text style={styles.completedHeader}>
-                    {currentUserId === userAId ? 'NicMeUp Completed?' : 'NicAssist Completed?'}
+                    {currentUserId === userAId ? 'NicMeUp Completed?' : 'Assist Completed?'}
                   </Text>
                   <TouchableOpacity
                     style={styles.completedButton}
@@ -879,7 +879,7 @@ const handleAlertOk = async () => {
             <Marker
               key="nicAssist"
               coordinate={{ latitude: nicAssistLat, longitude: nicAssistLng }}
-              title="NicAssist Location"
+              title="Assist Location"
               pinColor="#60a8b8"
             />
           </MapView>
@@ -888,7 +888,7 @@ const handleAlertOk = async () => {
         </View>
       )}
       <TouchableOpacity style={styles.bottomButton} onPress={handleCancel}>
-        <Text style={styles.buttonText}>{isUserA ? 'Cancel NicMeUp' : 'Cancel NicAssist'}</Text>
+        <Text style={styles.buttonText}>{isUserA ? 'Cancel NicMeUp' : 'Cancel Assist'}</Text>
       </TouchableOpacity>
       <CancelAlert visible={showCancelAlert} onOk={handleAlertOk} userId={currentUserId} />
       {/* Ratings Modal */}
@@ -901,7 +901,7 @@ const handleAlertOk = async () => {
         <View style={styles.ratingModalContainer}>
           <View style={styles.ratingModalContent}>
             <Text style={styles.ratingModalTitle}>
-              {currentUserId === userAId ? 'How was your NicMeUp?' : 'How was your NicAssist?'}
+              {currentUserId === userAId ? 'How was your NicMeUp?' : 'How was your Assist?'}
             </Text>
 
             {(!isUserA ? userAData?.photoURL : userBData?.photoURL) ? (

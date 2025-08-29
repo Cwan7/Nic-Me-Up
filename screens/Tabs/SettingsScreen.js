@@ -198,7 +198,7 @@ export default function SettingsScreen() {
 
         <View style={styles.nicAssistHeader}>
           <View style={styles.editSection}>
-            <Text style={styles.subheader}>NicAssist</Text>
+            <Text style={styles.subheader}>Assist</Text>
             <TouchableOpacity onPress={handleEditToggle} style={styles.editButton}>
               <MaterialIcons name="edit" size={24} color={isEditing ? '#60a8b8' : '#000'} />
             </TouchableOpacity>
@@ -214,7 +214,7 @@ export default function SettingsScreen() {
         </View>
         {nicAssists.length === 0 && (
           <View style={styles.settingItem}>
-            <Text style={styles.AddAddress}>Add NicAssist Address</Text>
+            <Text style={styles.AddAddress}>Add Assist Address</Text>
           </View>
         )}
         {nicAssists.map((assist, index) => {
@@ -274,7 +274,7 @@ export default function SettingsScreen() {
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>Add NicAssist Address</Text>
+          <Text style={styles.modalTitle}>Add Assist Address</Text>
           <TouchableOpacity
             style={[styles.currentAddressButton, { backgroundColor: '#fff' }]}
             onPress={async () => {

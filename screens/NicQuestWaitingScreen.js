@@ -140,7 +140,7 @@ useEffect(() => {
       <Image source={require('../assets/Logo3.png')} style={styles.logo} resizeMode='contain' />
       {waiting ? (
         <>
-          <Text style={styles.message}>Waiting for NicAssist...</Text>
+          <Text style={styles.message}>Waiting for Assist...</Text>
           <ActivityIndicator size="large" color="#60a8b8" style={styles.loading} />
         </>
       ) : null}

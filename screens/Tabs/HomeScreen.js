@@ -426,7 +426,7 @@ const handleNicQuest = async () => {
     } else {
       console.log('⚠️ No nearby active NicAssists or recent locations');
       await updateDoc(userADocRef, { 'NicMeUp.sessionId': "" }, { merge: true });
-      Alert.alert('No Available Users', 'No active NicAssists or recent users within range.');
+      Alert.alert('No Available Users', 'No active Assists or recent users within range.');
     }
   } catch (error) {
     console.error('❌ Error sending NicMeUp:', error);
@@ -565,7 +565,7 @@ const handleNicQuest = async () => {
                     </View>
                     <View style={styles.userCard}>
                       <Text style={styles.usernameActivity}>{userB.displayName}</Text>
-                      <Text style={styles.roleLabel}>NicAssist</Text>
+                      <Text style={styles.roleLabel}>Assist</Text>
                     </View>
                   </View>
                 </View>

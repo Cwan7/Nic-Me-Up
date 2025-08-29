@@ -1,5 +1,5 @@
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc, query, collection, where, getDocs, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, onSnapshot, updateDoc, query, collection, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
@@ -20,6 +20,7 @@ import SettingsScreen from './screens/Tabs/SettingsScreen';
 import ProfileScreen from './screens/Tabs/ProfileScreen';
 import NicQuestWaitingScreen from './screens/NicQuestWaitingScreen';
 import NicAssistScreen from './screens/NicAssistScreen';
+import InfoScreen from './screens/Tabs/InfoScreen';
 import { useHasNavigated } from "./NavContext";
 import { FontAwesome } from 'react-native-vector-icons';
 import Logo5 from './assets/Logo5.png';
@@ -54,6 +55,7 @@ const TabNavigator = ({ user }) => (
       tabBarIcon: ({ focused, color }) => {
         const iconName = route.name === 'Home' ? 'home' :
                         route.name === 'Profile' ? 'account-circle' :
+                        route.name === 'Info' ? 'info-outline' :
                         route.name === 'Settings' ? 'settings' : null;
         return iconName ? <MaterialIcons name={iconName} size={24} color={color} /> : null;
       },
@@ -62,6 +64,7 @@ const TabNavigator = ({ user }) => (
     <Tab.Screen name="Home" component={HomeScreen} initialParams={{ user: { displayName: user?.displayName, uid: user?.uid } }} />
     <Tab.Screen name="Settings" component={SettingsScreen} initialParams={{ user: { displayName: user?.displayName, uid: user?.uid } }} />
     <Tab.Screen name="Profile" component={ProfileScreen} initialParams={{ user: { displayName: user?.displayName, uid: user?.uid } }} />
+    <Tab.Screen name="Info" component={InfoScreen} initialParams={{ user: { displayName: user?.displayName, uid: user?.uid } }} />
   </Tab.Navigator>
 );
 
@@ -76,6 +79,7 @@ export default function App() {
   const hasNavigated = useHasNavigated();
   const [needsToAcceptTerms, setNeedsToAcceptTerms] = useState(false);
   const [latestTerms, setLatestTerms] = useState(null);
+  const [onboardingComplete, setOnboardingComplete] = useState(false)
 
 const CustomStarRating = ({ rating = 5, size = 20 }) => {
   const stars = [];
@@ -439,7 +443,16 @@ const handleModalAction = async (action) => {
 
   setIsModalVisible(false);
 };
-
+useEffect(() => {
+  if (!user) return;
+  const userRef = doc(db, 'users', user.uid);
+  const unsub = onSnapshot(userRef, (snap) => {
+    if (snap.exists()) {
+      setOnboardingComplete(!!snap.data().onboardingComplete);
+    }
+  });
+  return unsub;
+}, [user]);
 
 return (
   <NavigationContainer ref={navigationRef}>
@@ -512,26 +525,35 @@ return (
           }}
         >
           {user ? (
-            <>
-              <Stack.Screen name="Tabs" options={{ headerShown: false }}>
-                {() => <TabNavigator user={{ displayName: user?.displayName, uid: user?.uid }} />}
-              </Stack.Screen>
-              <Stack.Screen
-                name="NicQuestWaiting"
-                component={NicQuestWaitingScreen}
-                options={{
-                  header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
-                  headerRight: () => null,
-                }}
+            !onboardingComplete ? (
+              <Stack.Screen 
+                name="InfoScreen" 
+                component={InfoScreen} 
+                initialParams={{ fromOnboarding: true }}
+                options={{ headerShown: false }} 
               />
-              <Stack.Screen
-                name="NicAssist"
-                component={NicAssistScreen}
-                options={{
-                  header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
-                }}
-              />
-            </>
+            ) : (
+              <>
+                <Stack.Screen name="Tabs" options={{ headerShown: false }}>
+                  {() => <TabNavigator user={{ displayName: user?.displayName, uid: user?.uid }} />}
+                </Stack.Screen>
+                <Stack.Screen
+                  name="NicQuestWaiting"
+                  component={NicQuestWaitingScreen}
+                  options={{
+                    header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
+                    headerRight: () => null,
+                  }}
+                />
+                <Stack.Screen
+                  name="NicAssist"
+                  component={NicAssistScreen}
+                  options={{
+                    header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
+                  }}
+                />
+              </>
+            )
           ) : (
             <>
               <Stack.Screen name="Login" component={LoginScreen} />
@@ -581,7 +603,7 @@ return (
                   style={styles.buttonNicAssist}
                   onPress={() => handleModalAction("NicAssist")}
                 >
-                  <Text style={styles.buttonText}>NicAssist</Text>
+                  <Text style={styles.buttonText}>Assist</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.buttonDecline}
