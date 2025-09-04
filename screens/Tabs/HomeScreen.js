@@ -121,7 +121,7 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-export default function HomeScreen({ route }) {
+export default function HomeScreen({ user }) {
   const [nicAssists, setNicAssists] = useState([]);
   const [recentLocations, setRecentLocations] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
@@ -129,6 +129,7 @@ export default function HomeScreen({ route }) {
   const [region, setRegion] = useState(null);
   const [recentActivities, setRecentActivities] = useState([]);
   const [userInfoMap, setUserInfoMap] = useState({});
+  const [userName, setUserName] = useState('Friend');
 
   const regionRef = useRef({
     latitudeDelta: 0.003,
@@ -139,16 +140,12 @@ export default function HomeScreen({ route }) {
   const unsubscribeLocation = useRef(null);
   const unsubscribeActivities = useRef(null);
   const isFocused = useIsFocused();
-  const { user } = route.params || { user: { displayName: 'Friend', uid: null } };
-  const userName = user.displayName || 'Friend';
   const navigation = useNavigation();
   const isListenerActive = useRef(false);
 
   useEffect(() => {
     const loadUserData = async () => {
-      const currentUser = auth.currentUser;
-      console.log('🔍 Loading user data, isFocused:', isFocused, 'currentUser:', currentUser?.uid);
-      if (!currentUser || !isFocused) {
+      if (!user || !isFocused) {
         console.log('⏸️ Delaying load: no user or not focused');
         return;
       }
@@ -159,23 +156,28 @@ export default function HomeScreen({ route }) {
       }
 
       try {
-        const userDocRef = doc(db, 'users', currentUser.uid);
+        const userDocRef = doc(db, 'users', user.uid); // Use user.uid from prop
         const userDoc = await getDoc(userDocRef);
         console.log('📋 User doc fetched:', userDoc.exists());
         const userData = userDoc.data();
 
-        if (userData?.location) {
-          setUserLocation(userData.location);
-          setQuestDistance(userData.nicQuestDistance || 250);
-          user.photoURL = userData.photoURL || user.photoURL;
-          console.log('📍 User location set:', userData.location, 'questDistance:', userData.nicQuestDistance || 250);
-        } else {
-          setRegion({
-            latitude: 39.7405,
-            longitude: -104.9706,
-            ...regionRef.current,
-          });
-          console.log('⚠️ No user location, using default region:', { latitude: 39.7405, longitude: -104.9706 });
+        if (userDoc.exists()) {
+          // Use username and photoURL from Firestore or fallback to prop
+          const username = userData.username || user.displayName || 'Friend';
+          setUserName(username); // Assuming setUserName is defined elsewhere or remove if unused
+          if (userData?.location) {
+            setUserLocation(userData.location);
+            setQuestDistance(userData.nicQuestDistance || 250);
+            // Update user photoURL if needed, but it's already in the prop
+            console.log('📍 User location set:', userData.location, 'questDistance:', userData.nicQuestDistance || 250);
+          } else {
+            setRegion({
+              latitude: 39.7405,
+              longitude: -104.9706,
+              ...regionRef.current,
+            });
+            console.log('⚠️ No user location, using default region');
+          }
         }
 
         const querySnapshot = await getDocs(collection(db, 'users'));
@@ -184,13 +186,13 @@ export default function HomeScreen({ route }) {
         const now = Date.now();
         console.log('🔍 Querying users, total docs:', querySnapshot.size);
 
-        querySnapshot.forEach(docSnap => {
-          if (docSnap.id === currentUser.uid) return;
+        querySnapshot.forEach((docSnap) => {
+          if (docSnap.id === user.uid) return;
 
           const data = docSnap.data();
           console.log(`👤 User ${docSnap.id}, NicAssists count: ${data.NicAssists?.length || 0}, location:`, data.location);
           if (data.NicAssists) {
-            data.NicAssists.forEach(assist => {
+            data.NicAssists.forEach((assist) => {
               if (assist.Active) {
                 assists.push({
                   userId: docSnap.id,
@@ -219,7 +221,6 @@ export default function HomeScreen({ route }) {
         });
         setNicAssists(assists);
         setRecentLocations(locations);
-        
 
         const userIds = new Set();
         if (unsubscribeActivities.current) {
@@ -232,8 +233,8 @@ export default function HomeScreen({ route }) {
           const activities = activityDoc.exists() ? activityDoc.data().activities || [] : [];
           console.log('📊 Recent activities fetched:', activities.length);
           setRecentActivities(activities.sort((a, b) => b.timestamp - a.timestamp).slice(0, 5));
-          
-          activities.forEach(act => {
+
+          activities.forEach((act) => {
             if (act.userAId) userIds.add(act.userAId);
             if (act.userBId) userIds.add(act.userBId);
           });
@@ -245,7 +246,7 @@ export default function HomeScreen({ route }) {
                 const docSnap = await getDoc(docRef);
                 if (docSnap.exists()) {
                   const data = docSnap.data();
-                  setUserInfoMap(prev => ({
+                  setUserInfoMap((prev) => ({
                     ...prev,
                     [uid]: { displayName: data.username || 'Unknown' },
                   }));
@@ -296,7 +297,7 @@ export default function HomeScreen({ route }) {
       }
     };
 
-    if (isFocused && auth.currentUser) {
+    if (isFocused && user) {
       loadUserData();
     }
 
@@ -311,7 +312,7 @@ export default function HomeScreen({ route }) {
         console.log('🧹 Cleaned up activities tracking on unmount');
       }
     };
-  }, [isFocused]);
+  }, [isFocused, user?.uid]);
 
 const handleNicQuest = async () => {
   console.log(`📲 ${userName} NicMeUp button pressed, userLocation:`, userLocation, 'questDistance:', questDistance);

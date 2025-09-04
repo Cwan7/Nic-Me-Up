@@ -328,7 +328,7 @@ useEffect(() => {
   }
 }, [isGroup2, userBLocation, userBData, userALocation, questDistance, initialNicAssistLat, initialNicAssistLng]);
 
-  const PROXIMITY_THRESHOLD = 20;
+const PROXIMITY_THRESHOLD = 4;
 
 const checkProximityAndUpdate = useCallback(async () => {
   if (!isMountedRef.current) return;
@@ -364,7 +364,7 @@ const checkProximityAndUpdate = useCallback(async () => {
   );
   console.log(`📏 Calculated distance: ${distance.toFixed(2)} meters between ${userAId} and ${userBId}`);
 
-  // === New 5-second completion prompt logic ===
+  // === New 1-second completion prompt logic ===
   if (distance <= PROXIMITY_THRESHOLD) {
     if (!proximityTimerRef.current) {
       console.log(`⏳ Within ${PROXIMITY_THRESHOLD} — starting 5s completion timer...`);

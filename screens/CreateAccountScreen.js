@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Text, View, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
-import { auth } from '../firebase';
+import { auth, db } from '../firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { setDoc, doc } from "firebase/firestore";
 
 export default function CreateAccountScreen({ navigation }) {
   const [username, setUsername] = useState('');
@@ -9,20 +10,36 @@ export default function CreateAccountScreen({ navigation }) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const handleSignUp = async () => {
-    if (password !== confirmPassword) {
-      alert('Passwords do not match');
-      return;
-    }
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      await updateProfile(userCredential.user, { displayName: username });
-      console.log('✅ Email Sign-Up Success');
-      navigation.navigate('Tabs'); // Navigate to Tabs after sign-up
-    } catch (error) {
-      alert(`Sign-Up Error: ${error.message}`);
-    }
-  };
+const handleSignUp = async () => {
+  if (password !== confirmPassword) {
+    alert("Passwords do not match");
+    return;
+  }
+  try {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+
+    // ✅ Update Auth displayName (so it's cached in auth.currentUser)
+    await updateProfile(user, { displayName: username });
+
+    // ✅ Save full user profile in Firestore
+    await setDoc(doc(db, "users", user.uid), {
+      username,
+      email,
+      pouchType: "",
+      strength: "",
+      flavors: [],
+      notes: "",
+      photoURL: "",
+      createdAt: Date.now(),
+    });
+
+    console.log("✅ Account created successfully");
+    // navigation.navigate('Tabs');
+  } catch (error) {
+    alert(`Sign-Up Error: ${error.message}`);
+  }
+};
 
   return (
     <View style={styles.container}>

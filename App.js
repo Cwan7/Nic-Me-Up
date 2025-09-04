@@ -30,22 +30,24 @@ const Tab = createBottomTabNavigator();
 
 const Header = ({ user, navigation }) => {
   return (
-    <SafeAreaView style={{ backgroundColor: '#fff' }} edges={['top']}>
+    <SafeAreaView style={{ backgroundColor: "#fff" }} edges={["top"]}>
       <View style={styles.header}>
         <Image source={Logo5} style={styles.headerTitle} resizeMode="contain" />
         {user && (
-          <Text style={styles.headerUser}>{user.displayName || 'User'}</Text>
+          <Text style={styles.headerUser}>
+            {user.username || user.displayName || "User"}
+          </Text>
         )}
       </View>
     </SafeAreaView>
   );
 };
 
-const TabNavigator = ({ user }) => (
+const TabNavigator = ({ user, setUser }) => (
   <Tab.Navigator
     screenOptions={({ route }) => ({
       headerShown: true,
-      header: () => <Header user={user} />,
+      header: () => <Header user={user} />, // Use the passed user prop
       tabBarShowLabel: true,
       tabBarStyle: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#dcdcdc' },
       tabBarActiveTintColor: '#60a8b8',
@@ -61,10 +63,18 @@ const TabNavigator = ({ user }) => (
       },
     })}
   >
-    <Tab.Screen name="Home" component={HomeScreen} initialParams={{ user: { displayName: user?.displayName, uid: user?.uid } }} />
-    <Tab.Screen name="Settings" component={SettingsScreen} initialParams={{ user: { displayName: user?.displayName, uid: user?.uid } }} />
-    <Tab.Screen name="Profile" component={ProfileScreen} initialParams={{ user: { displayName: user?.displayName, uid: user?.uid } }} />
-    <Tab.Screen name="Info" component={InfoScreen} initialParams={{ user: { displayName: user?.displayName, uid: user?.uid } }} />
+    <Tab.Screen name="Home">
+      {() => <HomeScreen user={user} setUser={setUser} />}
+    </Tab.Screen>
+    <Tab.Screen name="Settings">
+      {() => <SettingsScreen user={user} setUser={setUser} />}
+    </Tab.Screen>
+    <Tab.Screen name="Profile">
+      {() => <ProfileScreen user={user} setUser={setUser} />}
+    </Tab.Screen>
+    <Tab.Screen name="Info">
+      {() => <InfoScreen user={user} setUser={setUser} />}
+    </Tab.Screen>
   </Tab.Navigator>
 );
 
@@ -79,176 +89,165 @@ export default function App() {
   const hasNavigated = useHasNavigated();
   const [needsToAcceptTerms, setNeedsToAcceptTerms] = useState(false);
   const [latestTerms, setLatestTerms] = useState(null);
-  const [onboardingComplete, setOnboardingComplete] = useState(false)
+  const [onboardingComplete, setOnboardingComplete] = useState(false);
 
-const CustomStarRating = ({ rating = 5, size = 20 }) => {
-  const stars = [];
-  const rounded = Math.round(rating * 2) / 2; // nearest 0.5
-
-  for (let i = 1; i <= 5; i++) {
-    if (i <= rounded) {
-      // Full gold star
-      stars.push(
-        <FontAwesome key={i} name="star" size={size} color="#FFD700" />
-      );
-    } else if (i - 0.5 === rounded) {
-      // Layered half gold + half grey
-      stars.push(
-        <View key={i} style={{ position: 'relative', width: size, height: size }}>
-          <FontAwesome
-            name="star"
-            size={size}
-            color="#cdcdcd" // base grey star
-            style={{ position: 'absolute', left: 0 }}
-          />
-          <View
-            style={{
-              width: size / 2,
-              overflow: 'hidden',
-              position: 'absolute',
-              left: 0,
-              height: size,
-            }}
-          >
-            <FontAwesome
-              name="star"
-              size={size}
-              color="#FFD700" // gold star on left half
-            />
+  const CustomStarRating = ({ rating = 5, size = 20 }) => {
+    const stars = [];
+    const rounded = Math.round(rating * 2) / 2;
+    for (let i = 1; i <= 5; i++) {
+      if (i <= rounded) {
+        stars.push(<FontAwesome key={i} name="star" size={size} color="#FFD700" />);
+      } else if (i - 0.5 === rounded) {
+        stars.push(
+          <View key={i} style={{ position: 'relative', width: size, height: size }}>
+            <FontAwesome name="star" size={size} color="#cdcdcd" style={{ position: 'absolute', left: 0 }} />
+            <View style={{ width: size / 2, overflow: 'hidden', position: 'absolute', left: 0, height: size }}>
+              <FontAwesome name="star" size={size} color="#FFD700" />
+            </View>
           </View>
-        </View>
-      );
-    } else {
-      // Empty grey star
-      stars.push(
-        <FontAwesome key={i} name="star" size={size} color="#cdcdcd" />
-      );
-    }
-  }
-
-  return <View style={{ flexDirection: 'row', marginTop: 5 }}>{stars}</View>;
-};
-//-----------------------------TERMS & Conditions--------------------------
-async function getLatestTerms() {
-  const termsRef = doc(db, "appConfig", "terms");
-  const termsSnap = await getDoc(termsRef);
-
-  if (termsSnap.exists()) {
-    return termsSnap.data(); // { version, text, lastUpdated }
-  } else {
-    console.error("No terms document found!");
-    return null;
-  }
-}
-// useEffect for terms/condition
-useEffect(() => {
-  const checkTerms = async () => {
-    if (!user) return; // only check after login
-    if (!onboardingComplete) return;
-    try {
-      // 1. Load latest terms doc
-      const termsRef = doc(db, "appConfig", "terms");
-      const termsSnap = await getDoc(termsRef);
-      if (!termsSnap.exists()) return;
-      const termsData = termsSnap.data();
-      setLatestTerms(termsData);
-
-      // 2. Load user doc
-      const userRef = doc(db, "users", user.uid);
-      const userSnap = await getDoc(userRef);
-      const userData = userSnap.data();
-
-      // 3. Decide if they need to accept
-      if (
-        !userData?.termsAcceptedVersion ||
-        userData.termsAcceptedVersion !== termsData.version
-      ) {
-        setNeedsToAcceptTerms(true);
+        );
+      } else {
+        stars.push(<FontAwesome key={i} name="star" size={size} color="#cdcdcd" />);
       }
-    } catch (err) {
-      console.error("Error checking terms:", err);
     }
+    return <View style={{ flexDirection: 'row', marginTop: 5 }}>{stars}</View>;
   };
 
-  checkTerms();
-}, [user, onboardingComplete]); 
-//-------------------END OF TERMS AND CONDITIONS-----------------------
+  async function getLatestTerms() {
+    const termsRef = doc(db, "appConfig", "terms");
+    const termsSnap = await getDoc(termsRef);
+    return termsSnap.exists() ? termsSnap.data() : null;
+  }
 
   useEffect(() => {
-  const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-    setUser(firebaseUser);
-    if (!firebaseUser) return;
-
-    // --- user setup (always run, even before terms) ---
-    const token = (await Notifications.getExpoPushTokenAsync({ projectId: Constants.expoConfig.extra?.eas?.projectId })).data;
-    const userDocRef = doc(db, 'users', firebaseUser.uid);
-    const userDoc = await getDoc(userDocRef);
-
-    await setDoc(userDocRef, {
-      flavors: userDoc.exists() ? userDoc.data().flavors : 'Random',
-      nicQuestDistance: userDoc.exists() ? userDoc.data().nicQuestDistance : 400,
-      notes: userDoc.exists() ? userDoc.data().notes : 'Notes for NicMeUp',
-      photoURL: userDoc.exists() ? userDoc.data().photoURL : null,
-      pouchType: userDoc.exists() ? userDoc.data().pouchType : 'Random',
-      strength: userDoc.exists() ? userDoc.data().strength : '3mg-6mg',
-      expoPushToken: token,
-    }, { merge: true });
-  });
-
-  return () => unsubscribe();
-}, []);
-
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const startLocationTracking = async () => {
-      if (!auth.currentUser || locationPermission !== 'granted' || !Device.isDevice) return;
-
-      if (locationSubscription.current) {
-        locationSubscription.current.remove();
-        console.log('🧹 Removed existing location watcher');
-      }
-
-      locationSubscription.current = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.Highest,
-          timeInterval: 2000,
-          distanceInterval: 2,
-        },
-        async (position) => {
-          const { latitude, longitude } = position.coords;
-          const update = {
-            location: {
-              latitude,
-              longitude,
-              timestamp: Date.now(),
-            },
-          };
-          try {
-            await updateDoc(doc(db, 'users', auth.currentUser.uid), update);
-            console.log(`📍 Updated: ${latitude}, ${longitude}`);
-          } catch (err) {
-            console.error('🔥 Failed to update location:', err.message);
-          }
+    const checkTerms = async () => {
+      if (!user || !onboardingComplete) return;
+      try {
+        const termsData = await getLatestTerms();
+        if (!termsData) return;
+        setLatestTerms(termsData);
+        const userRef = doc(db, "users", user.uid);
+        const userSnap = await getDoc(userRef);
+        const userData = userSnap.data();
+        if (!userData?.termsAcceptedVersion || userData.termsAcceptedVersion !== termsData.version) {
+          setNeedsToAcceptTerms(true);
         }
+      } catch (err) {
+        console.error("Error checking terms:", err);
+      }
+    };
+    checkTerms();
+  }, [user, onboardingComplete]);
+
+useEffect(() => {
+  let unsubscribeUserDoc; // declare here so both paths can access
+
+  const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+    if (!firebaseUser) {
+      setUser(null);
+      if (unsubscribeUserDoc) unsubscribeUserDoc(); // 👈 clean up
+      return;
+    }
+
+    try {
+      const token = (
+        await Notifications.getExpoPushTokenAsync({
+          projectId: Constants.expoConfig.extra?.eas?.projectId,
+        })
+      ).data;
+
+      const userDocRef = doc(db, "users", firebaseUser.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      await setDoc(
+        userDocRef,
+        {
+          flavors: userDoc.exists() ? userDoc.data().flavors ?? "Random" : "Random",
+          nicQuestDistance: userDoc.exists() ? userDoc.data().nicQuestDistance ?? 400 : 400,
+          notes: userDoc.exists() ? userDoc.data().notes ?? "Notes for NicMeUp" : "Notes for NicMeUp",
+          photoURL: userDoc.exists() ? userDoc.data().photoURL ?? null : null,
+          pouchType: userDoc.exists() ? userDoc.data().pouchType ?? "Random" : "Random",
+          strength: userDoc.exists() ? userDoc.data().strength ?? "3mg-6mg" : "3mg-6mg",
+          expoPushToken: token,
+        },
+        { merge: true }
       );
 
-      console.log('✅ Started live location tracking');
-    };
+      unsubscribeUserDoc = onSnapshot(userDocRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          const mergedUser = {
+            firebaseUser,
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            ...data,
+          };
+          setUser(mergedUser);
+          console.log("🟢 Realtime user update:", mergedUser.username);
+        }
+      });
+    } catch (err) {
+      console.error("🔥 Error in onAuthStateChanged effect:", err);
+    }
+  });
 
-    startLocationTracking();
+  return () => {
+    unsubscribeAuth();
+    if (unsubscribeUserDoc) unsubscribeUserDoc(); // 👈 cleanup on unmount too
+  };
+}, []);
 
-    return () => {
-      isMounted = false;
-      if (locationSubscription.current) {
-        locationSubscription.current.remove();
-        locationSubscription.current = null;
-        console.log('🧹 Cleaned up live location tracking');
+useEffect(() => {
+  (async () => {
+    const { status } = await Location.getForegroundPermissionsAsync();
+    setLocationPermission(status);
+  })();
+}, []);
+
+useEffect(() => {
+  const startLocationTracking = async () => {
+    if (!auth.currentUser || locationPermission !== 'granted' || !Device.isDevice) return;
+
+    // cleanup old watcher first
+    if (locationSubscription.current) {
+      locationSubscription.current.remove();
+      locationSubscription.current = null;
+      console.log('🧹 Removed existing location watcher');
+    }
+
+    locationSubscription.current = await Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.Highest,
+        timeInterval: 2000,
+        distanceInterval: 2,
+      },
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        try {
+          await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+            location: { latitude, longitude, timestamp: Date.now() },
+          });
+          console.log(`📍 Updated: ${latitude}, ${longitude}`);
+        } catch (err) {
+          console.error('🔥 Failed to update location:', err.message);
+        }
       }
-    };
-  }, [locationPermission, user]);
+    );
+    console.log('✅ Started live location tracking');
+  };
 
+  startLocationTracking();
+
+  return () => {
+    if (locationSubscription.current) {
+      locationSubscription.current.remove();
+      locationSubscription.current = null;
+      console.log('🧹 Cleaned up live location tracking');
+    }
+  };
+}, [locationPermission, auth.currentUser?.uid]); 
+//---------------Notification logic----------------
   useEffect(() => {
     if (isInitialMount.current) {
       const checkInitialNotification = async () => {
@@ -256,8 +255,6 @@ useEffect(() => {
         if (response && response.notification) {
           const { data } = response.notification.request.content;
           if (data?.type === 'NicQuest' && data.userId !== auth.currentUser?.uid) {
-            const timestamp = new Date().toISOString();
-            console.log(`[${timestamp}] Initial NicMeUp on launch for userId:`, data.userId, 'Notification Data:', data);
             setNotification(data);
             setIsModalVisible(true);
           }
@@ -270,386 +267,211 @@ useEffect(() => {
 
   useEffect(() => {
     const notificationHandler = Notifications.setNotificationHandler({
-      handleNotification: async (notification) => {
-        const { data } = notification.request.content;
-        if (data?.type === 'NicQuest' && data.userId !== auth.currentUser?.uid) {
-          const timestamp = new Date().toISOString();
-          if (Device.isDevice) {
-            setNotification(data);
-            setIsModalVisible(true);
-          }
-        }
-        return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: true };
-      },
+      handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: true }),
     });
-
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const { data } = response.notification.request.content;
       if (data?.type === 'NicQuest' && data.userId !== auth.currentUser?.uid) {
         setNotification(data);
         setIsModalVisible(true);
       }
     });
-
     return () => {
-      if (notificationHandler && typeof notificationHandler.remove === 'function') {
-        notificationHandler.remove();
-      }
-      if (responseSubscription && typeof responseSubscription.remove === 'function') {
-        responseSubscription.remove();
-      }
-      if (locationSubscription.current) { // Fixed to use locationSubscription
-        locationSubscription.current.remove();
-        locationSubscription.current = null;
-        console.log('🧹 Cleaned up location watcher on unmount');
-      }
+      if (notificationHandler && typeof notificationHandler.remove === 'function') notificationHandler.remove();
+      if (responseSubscription && typeof responseSubscription.remove === 'function') responseSubscription.remove();
+      // if (locationSubscription.current) {
+      //   locationSubscription.current.remove();
+      //   locationSubscription.current = null;
+      //   console.log('🧹 Cleaned up location watcher on unmount');
+      // }
     };
   }, []);
 
-const handleModalAction = async (action) => {
-  console.log(`handleModalAction called with action: ${action} by ${auth.currentUser?.uid}`);
-
-  if (action === 'NicAssist' && !hasNavigated.current) {
-    try {
-      // 1) load userA doc (the requester)
-      const userADocRef = doc(db, 'users', notification.userId);
-      const userADocSnap = await getDoc(userADocRef);
-      const userAData = userADocSnap.exists() ? userADocSnap.data() : null;
-
-      // already assisted?
-      if (userAData?.NicMeUp?.nicQuestAssistedBy) {
-        Alert.alert('NicMeUp Already Assisted!', 'This NicMeUp has already been assisted by another user.',
-          [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
-        );
-        return;
-      }
-
-      // 2) Try get sessionId from notification payload first (best)
-      let sessionId = notification?.sessionId || notification?.data?.sessionId;
-
-      // 3) If not found, try from userA doc
-      if (!sessionId) {
-        sessionId = userAData?.NicMeUp?.sessionId;
-      }
-
-      // 4) Fallback: search nicSessions for an active session owned by userA
-      if (!sessionId) {
-        console.log('No sessionId in notification or userA doc — searching nicSessions for active session...');
-        const sessionsQ = query(
-          collection(db, 'nicSessions'),
-          where('userAId', '==', notification.userId),
-          where('active', '==', true)
-        );
-        const sessionsSnap = await getDocs(sessionsQ);
-        if (!sessionsSnap.empty) {
-          // pick the most recent (first) doc
-          const found = sessionsSnap.docs[0];
-          sessionId = found.id || found.data()?.sessionId;
-          console.log('Found fallback sessionId from nicSessions:', sessionId);
-        }
-      }
-
-      if (!sessionId) {
-        Alert.alert('NicMeUp Unavailable', 'This NicMeUp is no longer available.',
-          [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
-        );
-        return;
-      }
-
-      // 5) Verify the session doc is active before proceeding
-      const sessionRef = doc(db, 'nicSessions', sessionId);
-      const sessionSnap = await getDoc(sessionRef);
-      if (!sessionSnap.exists() || sessionSnap.data().active === false) {
-        Alert.alert('NicMeUp Unavailable', 'This NicMeUp has been canceled or completed.',
-          [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
-        );
-        return;
-      }
-
-      // 6) Ensure we have lat/lng (from notification or fallback)
-      const nicAssistLat = notification.nicAssistLat ?? notification.data?.nicAssistLat;
-      const nicAssistLng = notification.nicAssistLng ?? notification.data?.nicAssistLng;
-      if (nicAssistLat == null || nicAssistLng == null) {
-        console.error('❌ Could not retrieve nicAssistLat or nicAssistLng from notification');
-        Alert.alert('Missing data', 'Unable to get location for this NicMeUp.',
-          [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
-        );
-        return;
-      }
-
-      // 7) Claim the session: update userB and userA NicMeUp and set session.userBId
-      const userBDocRef = doc(db, 'users', auth.currentUser.uid);
-      const userBDataSnap = await getDoc(userBDocRef);
-      const userBData = userBDataSnap.exists() ? userBDataSnap.data() : {};
-
-      // Set nicAssistResponse and the sessionId on B
-      await updateDoc(userBDocRef, {
-        NicMeUp: {
-          ...userBData?.NicMeUp,
-          nicAssistResponse: notification.userId,
-          sessionId: sessionId
-        }
-      }, { merge: true });
-
-      // Update userA nicQuestAssistedBy (only if not already set)
-      const userADataLatestSnap = await getDoc(userADocRef);
-      const userADataLatest = userADataLatestSnap.exists() ? userADataLatestSnap.data() : {};
-      if (!userADataLatest?.NicMeUp?.nicQuestAssistedBy) {
-        await updateDoc(userADocRef, {
-          NicMeUp: {
-            ...userADataLatest?.NicMeUp,
-            nicQuestAssistedBy: auth.currentUser.uid
-          }
-        }, { merge: true });
-      }
-
-      // Update session doc with userBId (note: for true atomicity use a transaction)
-      await updateDoc(sessionRef, {
-        userBId: auth.currentUser.uid,
-        updatedAt: serverTimestamp ? serverTimestamp() : new Date()
-      });
-      const finalSessionSnap = await getDoc(sessionRef);
-      const finalSessionData = finalSessionSnap.exists() ? finalSessionSnap.data() : null;
-
-      if (!finalSessionData || finalSessionData.active === false) {
-        Alert.alert(
-          'NicMeUp Unavailable',
-          'This NicMeUp was canceled or completed while you were joining.',
-          [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
-        );
-        return; // stop navigation
-}
-      console.log(`✅ NicAssist selected for user ${notification?.userId} (session ${sessionId})`);
-
-      hasNavigated.current = true
-      navigationRef.current?.navigate('NicAssist', {
-        userAId: notification.userId,
-        userBId: auth.currentUser.uid,
-        sessionId,
-        nicAssistLat,
-        nicAssistLng,
-        isGroup2: notification.isGroup2 || false,
-      });
-
-    } catch (error) {
-      console.error('Error updating Firestore for NicAssist:', error);
-      Alert.alert('Error', 'Could not join NicMeUp. Try again.',
-        [{ text: 'OK', onPress: () => setIsModalVisible(false) }]
-      );
-    }
-  } else if (action === 'Decline') {
-    console.log(`❌ Decline NicMeUp for user ${notification?.userId}`);
-  }
-
-  setIsModalVisible(false);
-};
-useEffect(() => {
-  if (!user) return;
-  const userRef = doc(db, 'users', user.uid);
-  const unsub = onSnapshot(userRef, (snap) => {
-    if (snap.exists()) {
-      setOnboardingComplete(!!snap.data().onboardingComplete);
+  useEffect(() => {
+  const foregroundSub = Notifications.addNotificationReceivedListener((notification) => {
+    const { data } = notification.request.content;
+    if (data?.type === 'NicQuest' && data.userId !== auth.currentUser?.uid) {
+      setNotification(data);
+      setIsModalVisible(true);
     }
   });
-  return unsub;
-}, [user]);
 
-return (
-  <NavigationContainer ref={navigationRef}>
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: true,
-        header: ({ navigation, route }) => (
-          <Header user={user} navigation={navigation} />
-        ),
-      }}
-    >
-      {!user ? (
-        <>
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="CreateAccount" component={CreateAccountScreen} />
-        </>
-      ) : !onboardingComplete ? (
-        // 🚀 Show Info first
-        <Stack.Screen
-          name="InfoScreen"
-          component={InfoScreen}
-          initialParams={{ fromOnboarding: true }}
-          options={{ headerShown: false }}
-        />
-      ) : needsToAcceptTerms ? (
-        // 🚀 Show Terms as a dedicated screen (not messy overlay)
-        <Stack.Screen
-          name="TermsScreen"
-          options={{ headerShown: false }}
-        >
-          {() => (
-            <View style={styles.termsModalContainer}>
-              <View style={styles.termsModalContent}>
-                <Text style={styles.termsModalTitle}>Terms & Conditions</Text>
-                <ScrollView style={styles.scrollArea}>
-                  <Text style={styles.termsText}>{latestTerms?.text}</Text>
-                </ScrollView>
-                <View style={styles.termsButtonContainer}>
-                  <TouchableOpacity
-                    style={styles.termsButton}
-                    onPress={async () => {
-                      if (!user || !latestTerms) return;
-                      try {
-                        const userRef = doc(db, "users", user.uid);
-                        await updateDoc(userRef, {
-                          termsAcceptedVersion: latestTerms.version,
-                          termsAcceptedAt: serverTimestamp(),
-                        });
+  return () => foregroundSub.remove();
+}, []);
+//-----------------------End of Notification logic------------------
+  const handleModalAction = async (action) => {
+    console.log(`handleModalAction called with action: ${action} by ${auth.currentUser?.uid}`);
+    if (action === 'NicAssist' && !hasNavigated.current) {
+      try {
+        const userADocRef = doc(db, 'users', notification.userId);
+        const userADocSnap = await getDoc(userADocRef);
+        const userAData = userADocSnap.exists() ? userADocSnap.data() : null;
+        if (userAData?.NicMeUp?.nicQuestAssistedBy) {
+          Alert.alert('NicMeUp Already Assisted!', 'This NicMeUp has already been assisted by another user.', [{ text: 'OK', onPress: () => setIsModalVisible(false) }]);
+          return;
+        }
+        let sessionId = notification?.sessionId || notification?.data?.sessionId || userAData?.NicMeUp?.sessionId;
+        if (!sessionId) {
+          const sessionsQ = query(collection(db, 'nicSessions'), where('userAId', '==', notification.userId), where('active', '==', true));
+          const sessionsSnap = await getDocs(sessionsQ);
+          if (!sessionsSnap.empty) sessionId = sessionsSnap.docs[0].id;
+        }
+        if (!sessionId) {
+          Alert.alert('NicMeUp Unavailable', 'This NicMeUp is no longer available.', [{ text: 'OK', onPress: () => setIsModalVisible(false) }]);
+          return;
+        }
+        const sessionRef = doc(db, 'nicSessions', sessionId);
+        const sessionSnap = await getDoc(sessionRef);
+        if (!sessionSnap.exists() || sessionSnap.data().active === false) {
+          Alert.alert('NicMeUp Unavailable', 'This NicMeUp has been canceled or completed.', [{ text: 'OK', onPress: () => setIsModalVisible(false) }]);
+          return;
+        }
+        const nicAssistLat = notification.nicAssistLat ?? notification.data?.nicAssistLat;
+        const nicAssistLng = notification.nicAssistLng ?? notification.data?.nicAssistLng;
+        if (nicAssistLat == null || nicAssistLng == null) {
+          Alert.alert('Missing data', 'Unable to get location for this NicMeUp.', [{ text: 'OK', onPress: () => setIsModalVisible(false) }]);
+          return;
+        }
+        const userBDocRef = doc(db, 'users', auth.currentUser.uid);
+        await updateDoc(userBDocRef, { NicMeUp: { nicAssistResponse: notification.userId, sessionId } }, { merge: true });
+        const userADataLatestSnap = await getDoc(userADocRef);
+        if (!userADataLatestSnap.exists() || !userADataLatestSnap.data().NicMeUp?.nicQuestAssistedBy) {
+          await updateDoc(userADocRef, { NicMeUp: { nicQuestAssistedBy: auth.currentUser.uid } }, { merge: true });
+        }
+        await updateDoc(sessionRef, { userBId: auth.currentUser.uid, updatedAt: serverTimestamp() });
+        const finalSessionSnap = await getDoc(sessionRef);
+        if (!finalSessionSnap.exists() || finalSessionSnap.data().active === false) {
+          Alert.alert('NicMeUp Unavailable', 'This NicMeUp was canceled or completed while you were joining.', [{ text: 'OK', onPress: () => setIsModalVisible(false) }]);
+          return;
+        }
+        hasNavigated.current = true;
+        navigationRef.current?.navigate('NicAssist', { userAId: notification.userId, userBId: auth.currentUser.uid, sessionId, nicAssistLat, nicAssistLng, isGroup2: notification.isGroup2 || false });
+      } catch (error) {
+        console.error('Error updating Firestore for NicAssist:', error);
+        Alert.alert('Error', 'Could not join NicMeUp. Try again.', [{ text: 'OK', onPress: () => setIsModalVisible(false) }]);
+      }
+    } else if (action === 'Decline') {
+      console.log(`❌ Decline NicMeUp for user ${notification?.userId}`);
+    }
+    setIsModalVisible(false);
+  };
 
-                        // ✅ ask for location now
-                        const { status: foregroundStatus } =
-                          await Location.requestForegroundPermissionsAsync();
+  useEffect(() => {
+    if (!user) return;
+    const userRef = doc(db, 'users', user.uid);
+    const unsub = onSnapshot(userRef, (snap) => {
+      if (snap.exists()) setOnboardingComplete(!!snap.data().onboardingComplete);
+    });
+    return unsub;
+  }, [user]);
 
-                        if (foregroundStatus === "granted") {
-                          const initialLoc = Device.isDevice
-                            ? await Location.getCurrentPositionAsync({})
-                            : {
-                                coords: {
-                                  latitude: 39.74053877190388,
-                                  longitude: -104.970766737421,
-                                  timestamp: new Date().toISOString(),
-                                },
-                              };
-
-                          await setDoc(
-                            userRef,
-                            {
+  return (
+    <NavigationContainer ref={navigationRef}>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: true,
+          header: ({ navigation, route }) => <Header user={user} navigation={navigation} />,
+        }}
+      >
+        {!user ? (
+          <>
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="CreateAccount" component={CreateAccountScreen} />
+          </>
+        ) : !onboardingComplete ? (
+          <Stack.Screen name="InfoScreen" component={InfoScreen} initialParams={{ fromOnboarding: true }} options={{ headerShown: false }} />
+        ) : needsToAcceptTerms ? (
+          <Stack.Screen name="TermsScreen" options={{ headerShown: false }}>
+            {() => (
+              <View style={styles.termsModalContainer}>
+                <View style={styles.termsModalContent}>
+                  <Text style={styles.termsModalTitle}>Terms & Conditions</Text>
+                  <ScrollView style={styles.scrollArea}>
+                    <Text style={styles.termsText}>{latestTerms?.text}</Text>
+                  </ScrollView>
+                  <View style={styles.termsButtonContainer}>
+                    <TouchableOpacity
+                      style={styles.termsButton}
+                      onPress={async () => {
+                        if (!user || !latestTerms) return;
+                        try {
+                          const userRef = doc(db, "users", user.uid);
+                          await updateDoc(userRef, {
+                            termsAcceptedVersion: latestTerms.version,
+                            termsAcceptedAt: serverTimestamp(),
+                          });
+                          const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+                          if (foregroundStatus === "granted") {
+                            const initialLoc = Device.isDevice ? await Location.getCurrentPositionAsync({}) : {
+                              coords: { latitude: 39.74053877190388, longitude: -104.970766737421, timestamp: new Date().toISOString() },
+                            };
+                            await setDoc(userRef, {
                               location: {
                                 latitude: initialLoc.coords.latitude,
                                 longitude: initialLoc.coords.longitude,
-                                timestamp:
-                                  initialLoc.timestamp ||
-                                  new Date().toISOString(),
+                                timestamp: initialLoc.timestamp || new Date().toISOString(),
                               },
-                            },
-                            { merge: true }
-                          );
-
-                          setLocationPermission("granted");
-                        } else {
-                          setLocationPermission("denied");
-                          Alert.alert(
-                            "Location Permission Needed",
-                            "Please enable location in Settings under Privacy > Location Services.",
-                            [{ text: "OK" }]
-                          );
+                            }, { merge: true });
+                            setLocationPermission("granted");
+                          } else {
+                            setLocationPermission("denied");
+                            Alert.alert("Location Permission Needed", "Please enable location in Settings under Privacy > Location Services.", [{ text: "OK" }]);
+                          }
+                          setNeedsToAcceptTerms(false);
+                        } catch (err) {
+                          console.error("Error saving terms acceptance:", err);
+                          Alert.alert("Error", "Could not save your acceptance. Please try again.");
                         }
-
-                        setNeedsToAcceptTerms(false);
-                      } catch (err) {
-                        console.error("Error saving terms acceptance:", err);
-                        Alert.alert(
-                          "Error",
-                          "Could not save your acceptance. Please try again."
-                        );
-                      }
-                    }}
-                  >
-                    <Text style={styles.termsButtonText}>
-                      Accept Terms & Conditions
-                    </Text>
-                  </TouchableOpacity>
+                      }}
+                    >
+                      <Text style={styles.termsButtonText}>Accept Terms & Conditions</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
-            </View>
-          )}
-        </Stack.Screen>
-      ) : (
-        // 🚀 App after onboarding + terms
-        <>
-          <Stack.Screen name="Tabs" options={{ headerShown: false }}>
-            {() => (
-              <TabNavigator
-                user={{ displayName: user?.displayName, uid: user?.uid }}
-              />
             )}
           </Stack.Screen>
-
-          <Stack.Screen
-            name="NicQuestWaiting"
-            component={NicQuestWaitingScreen}
-            options={{
-              header: ({ navigation, route }) => (
-                <Header user={user} navigation={navigation} />
-              ),
-              headerRight: () => null,
-            }}
-          />
-
-          <Stack.Screen
-            name="NicAssist"
-            component={NicAssistScreen}
-            options={{
-              header: ({ navigation, route }) => (
-                <Header user={user} navigation={navigation} />
-              ),
-            }}
-          />
-        </>
-      )}
-    </Stack.Navigator>
-
-    {/* ✅ NicAssist modal still available */}
-    <Modal
-      visible={isModalVisible}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={() => setIsModalVisible(false)}
-    >
-      <View style={styles.modalContainer}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>
-            NicMeUp from {notification?.displayName || "Friend"}
-          </Text>
-          {notification?.profilePhoto ? (
-            <View style={styles.outerZynBorder}>
-              <View style={styles.innerWhiteBorder}>
-                <Image
-                  source={{ uri: notification.profilePhoto }}
-                  style={styles.profilePhoto}
-                  resizeMode="cover"
-                  onError={(e) =>
-                    console.log("Image load error:", e.nativeEvent.error)
-                  }
-                />
+        ) : (
+          <>
+            <Stack.Screen name="Tabs" options={{ headerShown: false }}>
+              {() => <TabNavigator user={user} setUser={setUser} />}
+            </Stack.Screen>
+            <Stack.Screen name="NicQuestWaiting" component={NicQuestWaitingScreen} options={{ header: ({ navigation, route }) => <Header user={user} navigation={navigation} />, headerRight: () => null }} />
+            <Stack.Screen name="NicAssist" component={NicAssistScreen} options={{ header: ({ navigation, route }) => <Header user={user} navigation={navigation} /> }} />
+          </>
+        )}
+      </Stack.Navigator>
+      <Modal visible={isModalVisible} transparent={true} animationType="slide" onRequestClose={() => setIsModalVisible(false)}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>NicMeUp from {notification?.displayName || "Friend"}</Text>
+            {notification?.profilePhoto ? (
+              <View style={styles.outerZynBorder}>
+                <View style={styles.innerWhiteBorder}>
+                  <Image source={{ uri: notification.profilePhoto }} style={styles.profilePhoto} resizeMode="cover" onError={(e) => console.log("Image load error:", e.nativeEvent.error)} />
+                </View>
               </View>
+            ) : (
+              <View style={styles.profilePlaceholder}>
+                <Text style={styles.placeholderText}>{(notification?.displayName && notification.displayName.charAt(0)) || "F"}</Text>
+              </View>
+            )}
+            <CustomStarRating rating={notification?.userRating ?? 5} size={20} />
+            <Text style={styles.modalMessage}>Someone needs a pouch!</Text>
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity style={styles.buttonNicAssist} onPress={() => handleModalAction("NicAssist")}>
+                <Text style={styles.buttonText}>Assist</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.buttonDecline} onPress={() => handleModalAction("Decline")}>
+                <Text style={styles.buttonText}>Decline</Text>
+              </TouchableOpacity>
             </View>
-          ) : (
-            <View style={styles.profilePlaceholder}>
-              <Text style={styles.placeholderText}>
-                {(notification?.displayName &&
-                  notification.displayName.charAt(0)) ||
-                  "F"}
-              </Text>
-            </View>
-          )}
-          <CustomStarRating rating={notification?.userRating ?? 5} size={20} />
-          <Text style={styles.modalMessage}>Someone needs a pouch!</Text>
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={styles.buttonNicAssist}
-              onPress={() => handleModalAction("NicAssist")}
-            >
-              <Text style={styles.buttonText}>Assist</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.buttonDecline}
-              onPress={() => handleModalAction("Decline")}
-            >
-              <Text style={styles.buttonText}>Decline</Text>
-            </TouchableOpacity>
           </View>
         </View>
-      </View>
-    </Modal>
-  </NavigationContainer>
-)};
+      </Modal>
+    </NavigationContainer>
+  );
+}
 
 
 const styles = StyleSheet.create({

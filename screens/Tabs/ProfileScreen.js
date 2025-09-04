@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Text, View, TouchableOpacity, StyleSheet, Image, Alert, TextInput, ScrollView, KeyboardAvoidingView, Platform, Modal } from 'react-native';
 import { auth } from '../../firebase';
-import { signOut, updateProfile, reauthenticateWithCredential, EmailAuthProvider, updatePassword } from 'firebase/auth';
+import { signOut, updateProfile, reauthenticateWithCredential, EmailAuthProvider, updatePassword, updateEmail } from 'firebase/auth';
 import * as ImagePicker from 'expo-image-picker';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { MaterialIcons } from '@expo/vector-icons';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 
-export default function ProfileScreen() {
-  const user = auth.currentUser;
+export default function ProfileScreen({ user, setUser }) {
   const [profilePhoto, setProfilePhoto] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [username, setUsername] = useState('');
@@ -26,25 +25,16 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (user) {
-      const userDocRef = doc(db, 'users', user.uid);
-      getDoc(userDocRef).then((docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setProfilePhoto(data.photoURL || null);
-          setUsername(user.displayName || '');
-          setPouchType(data.pouchType || 'Random');
-          setStrength(data.strength || '6mg');
-          setFlavors(data.flavors || 'All');
-          setNotes(data.notes || 'Notes for NicQuest');
-        } else {
-          setProfilePhoto(user.photoURL || null);
-          setUsername(user.displayName || '');
-          setNotes('Notes for NicQuest');
-        }
-        setEmail(user.email || ''); // Set initial email from auth
-      }).catch((error) => console.error('Firestore fetch error:', error));
+      // Sync local state with the user prop
+      setProfilePhoto(user.photoURL || null);
+      setUsername(user.username || user.displayName || '');
+      setEmail(user.email || '');
+      setPouchType(user.pouchType || 'Random');
+      setStrength(user.strength || '6mg');
+      setFlavors(user.flavors || 'All');
+      setNotes(user.notes || 'Notes for NicQuest');
     }
-  }, [user]);
+  }, [user]); // Re-run when user prop changes
 
   const handleSignOut = async () => {
     try {
@@ -84,10 +74,11 @@ export default function ProfileScreen() {
         if (user) {
           const userDocRef = doc(db, 'users', user.uid);
           await setDoc(userDocRef, { photoURL: downloadURL }, { merge: true });
-          await updateProfile(user, { photoURL: downloadURL }).catch((error) =>
+          await updateProfile(user.firebaseUser, { photoURL: downloadURL }).catch((error) =>
             console.error('Update Profile Error:', error)
           );
           setProfilePhoto(downloadURL);
+          setUser({ ...user, photoURL: downloadURL }); // Update parent state
         }
       } else {
         console.log('Image selection canceled or failed');
@@ -107,46 +98,48 @@ export default function ProfileScreen() {
     return reauthenticateWithCredential(user, credential);
   };
 
-const saveProfile = async () => {
-  if (user) {
-    try {
-      const userDocRef = doc(db, 'users', user.uid);
+  const saveProfile = async () => {
+    if (user) {
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
 
-      // Update email if changed
-      if (email && email !== user.email) {
-        await reauthenticate(currentPassword);
-        await updateEmail(user, email);
-        console.log('Email updated successfully');
+        // Update email if changed
+        if (email && email !== user.email) {
+          await reauthenticate(currentPassword);
+          await updateEmail(user.firebaseUser, email);
+          console.log('📧 Email updated successfully');
+        }
+
+        // Update Firestore profile
+        await setDoc(userDocRef, {
+          username,
+          pouchType,
+          strength,
+          flavors,
+          notes,
+          photoURL: profilePhoto,
+        }, { merge: true });
+
+        // Update auth displayName if username changed
+        if (username !== user.displayName) {
+          await updateProfile(user.firebaseUser, { displayName: username });
+        }
+
+        // Update parent state with new data
+        setUser({ ...user, username, email, pouchType, strength, flavors, notes, photoURL: profilePhoto });
+        setIsEditing(false);
+        console.log('✅ Profile saved to Firestore');
+      } catch (error) {
+        console.error('Save Profile Error:', error.message);
+        Alert.alert(
+          'Error',
+          error.message.includes('requires-recent-login')
+            ? 'Please enter your current password to update email.'
+            : 'Failed to save profile. Check logs for details.'
+        );
       }
-
-      // ✅ Update Firebase Auth displayName
-      if (username && username !== user.displayName) {
-        await updateProfile(user, { displayName: username });
-        await user.reload();
-        console.log('Auth displayName updated:', username);
-      }
-
-      // Update Firestore with all fields
-      await setDoc(userDocRef, {
-        username,
-        pouchType,
-        strength,
-        flavors,
-        notes,
-        photoURL: profilePhoto,
-      }, { merge: true });
-
-      setIsEditing(false);
-      console.log('Profile saved to Firestore');
-    } catch (error) {
-      console.error('Save Profile Error:', error.message);
-      Alert.alert('Error', error.message.includes('requires-recent-login') 
-        ? 'Please enter your current password to update email.'
-        : 'Failed to save profile. Check logs for details.');
     }
-  }
-};
-
+  };
 
   const updateUserPassword = async () => {
     if (newPassword !== reenterPassword) {
@@ -160,7 +153,7 @@ const saveProfile = async () => {
 
     try {
       await reauthenticate(currentPassword);
-      await updatePassword(user, newPassword);
+      await updatePassword(user.firebaseUser, newPassword);
       setModalVisible(false);
       setCurrentPassword('');
       setNewPassword('');
@@ -169,7 +162,7 @@ const saveProfile = async () => {
       Alert.alert('Success', 'Password has been updated.');
     } catch (error) {
       console.error('Password Update Error:', error.message);
-      Alert.alert('Error', error.message.includes('requires-recent-login') 
+      Alert.alert('Error', error.message.includes('requires-recent-login')
         ? 'Incorrect current password.'
         : 'Failed to update password. Check logs for details.');
     }
@@ -185,20 +178,20 @@ const saveProfile = async () => {
         <View style={styles.content}>
           <View style={styles.centeredProfile}>
             <View style={styles.profileBorder2}>
-            <View style={styles.profileBorder}>
-              {profilePhoto ? (
-                <Image source={{ uri: profilePhoto }} style={styles.profileImage} />
-              ) : (
-                <View style={styles.placeholder}>
-                  <Text style={styles.placeholderText}>
-                    {user?.displayName?.charAt(0) || 'U'}
-                  </Text>
-                </View>
-              )}
-              <TouchableOpacity style={styles.editIcon} onPress={pickImage} activeOpacity={0.7}>
-                <MaterialIcons name="edit" size={20} color="#000" />
-              </TouchableOpacity>
-            </View>
+              <View style={styles.profileBorder}>
+                {profilePhoto ? (
+                  <Image source={{ uri: profilePhoto }} style={styles.profileImage} />
+                ) : (
+                  <View style={styles.placeholder}>
+                    <Text style={styles.placeholderText}>
+                      {user?.displayName?.charAt(0) || 'U'}
+                    </Text>
+                  </View>
+                )}
+                <TouchableOpacity style={styles.editIcon} onPress={pickImage} activeOpacity={0.7}>
+                  <MaterialIcons name="edit" size={20} color="#000" />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
           <View style={styles.headerRow}>
@@ -324,7 +317,6 @@ const saveProfile = async () => {
     </KeyboardAvoidingView>
   );
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
