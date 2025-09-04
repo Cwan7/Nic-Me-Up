@@ -182,6 +182,8 @@ useEffect(() => {
             email: firebaseUser.email,
             displayName: firebaseUser.displayName,
             ...data,
+            ratingsAverage: data.ratings?.average ?? null,
+            ratingsCount: data.ratings?.count ?? 0,
           };
           setUser(mergedUser);
           console.log("🟢 Realtime user update:", mergedUser.username);

@@ -7,6 +7,7 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { MaterialIcons } from '@expo/vector-icons';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { FontAwesome } from 'react-native-vector-icons';
 
 export default function ProfileScreen({ user, setUser }) {
   const [profilePhoto, setProfilePhoto] = useState(null);
@@ -21,7 +22,31 @@ export default function ProfileScreen({ user, setUser }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [reenterPassword, setReenterPassword] = useState('');
+  const [rating, setRating] = useState(null)
+  const [ratingCount, setRatingCount] = useState(null)
   const storage = getStorage();
+
+    const CustomStarRating = ({ rating = 5, size = 20 }) => {
+      const stars = [];
+      const rounded = Math.round(rating * 2) / 2;
+      for (let i = 1; i <= 5; i++) {
+        if (i <= rounded) {
+          stars.push(<FontAwesome key={i} name="star" size={size} color="#FFD700" />);
+        } else if (i - 0.5 === rounded) {
+          stars.push(
+            <View key={i} style={{ position: 'relative', width: size, height: size }}>
+              <FontAwesome name="star" size={size} color="#cdcdcd" style={{ position: 'absolute', left: 0 }} />
+              <View style={{ width: size / 2, overflow: 'hidden', position: 'absolute', left: 0, height: size }}>
+                <FontAwesome name="star" size={size} color="#FFD700" />
+              </View>
+            </View>
+          );
+        } else {
+          stars.push(<FontAwesome key={i} name="star" size={size} color="#cdcdcd" />);
+        }
+      }
+      return <View style={{ flexDirection: 'row', marginTop: 5 }}>{stars}</View>;
+    };
 
   useEffect(() => {
     if (user) {
@@ -33,6 +58,16 @@ export default function ProfileScreen({ user, setUser }) {
       setStrength(user.strength || '6mg');
       setFlavors(user.flavors || 'All');
       setNotes(user.notes || 'Notes for NicQuest');
+      if (user.ratingsAverage) {
+        setRating(user.ratingsAverage);
+      } else {
+        setRating(null)
+      }
+      if (user.ratingsCount) {
+        setRatingCount(user.ratingsCount)
+      } else {
+        setRatingCount(null)
+      }
     }
   }, [user]); // Re-run when user prop changes
 
@@ -184,7 +219,7 @@ export default function ProfileScreen({ user, setUser }) {
                 ) : (
                   <View style={styles.placeholder}>
                     <Text style={styles.placeholderText}>
-                      {user?.displayName?.charAt(0) || 'U'}
+                      {user?.displayName?.charAt(0) || 'F'}
                     </Text>
                   </View>
                 )}
@@ -193,6 +228,16 @@ export default function ProfileScreen({ user, setUser }) {
                 </TouchableOpacity>
               </View>
             </View>
+            {rating ? (
+              <View style={{ alignItems: "center", marginTop: 5,  }}>
+                <CustomStarRating rating={rating} size={20} />
+                <Text style={{ marginTop: 2, fontSize: 14, color: "#555" }}>
+                  {rating.toFixed(2)} ({ratingCount} ratings)
+                  </Text>
+              </View>
+            ) : (
+              <Text style={{ marginTop: 5, fontStyle: 'italic' }}>No Account Ratings</Text>
+            )}
           </View>
           <View style={styles.headerRow}>
             <Text style={styles.title}>Profile</Text>
