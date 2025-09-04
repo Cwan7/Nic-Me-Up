@@ -243,13 +243,12 @@ const handleCompletion = async () => {
       clearInterval(heartbeatIntervalRef.current);
       heartbeatIntervalRef.current = null;
     }
-
+    setShowCompletionPrompt(false)
     setShowRatingModal(true);
   } catch (error) {
     console.error('Error completing session:', error);
   }
 };
-
 
 useEffect(() => {
   if (!sessionId || !userAId || !userBId || !currentUserId) return;
@@ -260,56 +259,48 @@ useEffect(() => {
 
   const sessionRef = doc(db, "nicSessions", sessionId);
   const unsubscribe = onSnapshot(sessionRef, (snapshot) => {
-  if (!snapshot.exists()) {
-    console.log("⚠️ Session deleted");
-    clearInterval(intervalId);
-    heartbeatIntervalRef.current = null;
-    setShowCancelAlert(true);
-    return;
-  }
-
-  const data = snapshot.data();
-
-  // 🔹 Case: session was completed
-  if (data.status === "completed") {
-    console.log(`✅ Session completed by ${data.completedBy}`);
-
-    clearInterval(intervalId);
-    heartbeatIntervalRef.current = null;
-
-    // if *I* completed, show rating modal (already handled in handleCompletion)
-    if (data.completedBy === currentUserId) {
-      console.log("🎉 You completed — already showing your rating modal");
-    } else {
-      // if OTHER user completed, auto-show my rating modal
-      setShowRatingModal(true);
-    }
-    return; // stop here
-  }
-
-  // 🔹 Case: canceled
-  if (data.active === false) {
-    console.log("🛑 Session inactive — stopping heartbeat");
-    clearInterval(intervalId);
-    heartbeatIntervalRef.current = null;
-    hasNavigated.current = false;
-
-    if (data.canceledBy && data.canceledBy !== currentUserId) {
-      console.log(`🚨 Session canceled by ${data.canceledBy}`);
+    if (!snapshot.exists()) {
+      console.log("⚠️ Session deleted");
+      clearInterval(intervalId);
+      heartbeatIntervalRef.current = null;
       setShowCancelAlert(true);
-    } else {
-      console.log("👋 Session ended by current user — no alert");
+      return;
     }
-  }
-});
 
+    const data = snapshot.data();
+
+    // 🔹 Case: session was completed
+    if (data.status === "completed") {
+      console.log(`✅ Session completed by ${data.completedBy}`);
+      clearInterval(intervalId);
+      heartbeatIntervalRef.current = null;
+      setShowCompletionPrompt(false); // Hide completion prompt for both
+      setShowRatingModal(true); // Show rating modal for both, regardless of who completed
+      return; // Stop further processing
+    }
+
+    // 🔹 Case: canceled
+    if (data.active === false) {
+      console.log("🛑 Session inactive — stopping heartbeat");
+      clearInterval(intervalId);
+      heartbeatIntervalRef.current = null;
+      hasNavigated.current = false;
+
+      if (data.canceledBy && data.canceledBy !== currentUserId) {
+        console.log(`🚨 Session canceled by ${data.canceledBy}`);
+        setShowCancelAlert(true);
+      } else {
+        console.log("👋 Session ended by current user — no alert");
+      }
+    }
+  });
 
   return () => {
     clearInterval(intervalId);
     heartbeatIntervalRef.current = null;
     unsubscribe();
     console.log("🧹 Cleaned up heartbeat + session listener");
-    hasNavigated.current = false; 
+    hasNavigated.current = false;
   };
 }, [sessionId, userAId, userBId, currentUserId]);
 
@@ -328,7 +319,7 @@ useEffect(() => {
   }
 }, [isGroup2, userBLocation, userBData, userALocation, questDistance, initialNicAssistLat, initialNicAssistLng]);
 
-const PROXIMITY_THRESHOLD = 4;
+const PROXIMITY_THRESHOLD = 3;
 
 const checkProximityAndUpdate = useCallback(async () => {
   if (!isMountedRef.current) return;
@@ -746,7 +737,21 @@ const handleAlertOk = async () => {
   };
 
   return (
+    
     <View style={styles.container}>
+        {/* Completion Prompt Modal */}
+      {showCompletionPrompt && (
+      <View style={styles.completionModalOverlay} >
+        <View style={styles.completionModalContent}>
+          <Text style={styles.completedHeader}>
+            {currentUserId === userAId ? 'NicMeUp Completed?' : 'Assist Completed?'}
+          </Text>
+          <TouchableOpacity style={styles.completedButton} onPress={handleCompletion}>
+            <Text style={styles.completedText}>Yes</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    )}
       {userAData && userBData && nicAssistLat && nicAssistLng && (
         <View>
           <View style={styles.card}>
@@ -783,7 +788,6 @@ const handleAlertOk = async () => {
                 <Text style={styles.roleLabel}>Assist</Text>
                 <Text style={styles.username}>{userBData?.username || 'Unknown'}</Text>
               </View>
-
             </View>
             <TouchableOpacity style={styles.chatIcon} onPress={() => setModalVisible(true)}>
               <View style={styles.iconContainer}>
@@ -792,99 +796,81 @@ const handleAlertOk = async () => {
               </View>
             </TouchableOpacity>
             <View style={styles.detailsContainer}>
-              {showCompletionPrompt ? (
-                <>
-                  <Text style={styles.completedHeader}>
-                    {currentUserId === userAId ? 'NicMeUp Completed?' : 'Assist Completed?'}
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.completedButton}
-                    onPress={handleCompletion}
-                  >
-                    <Text style={styles.completedText}>Yes</Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.infoHeader}>{userBData.username || 'User'}’s Info</Text>
-                  <View style={styles.data}>
-                    <View>
-                      <Text style={styles.detail}>Pouch Type: <Text style={styles.detailValue}>{userBData.pouchType || 'N/A'}</Text></Text>
-                      <Text style={styles.detail}>Strength: <Text style={styles.detailValue}>{userBData.strength || 'N/A'}</Text></Text>
-                    </View>
-                    <View>
-                      <Text style={styles.detail}>Flavors: <Text style={styles.detailValue}>{userBData.flavors || 'N/A'}</Text></Text>
-                      <Text style={styles.detail}>Notes: <Text style={styles.detailValue}>{userBData.notes || 'N/A'}</Text></Text>
-                    </View>
-                  </View>
-                </>
-              )}
+              <Text style={styles.infoHeader}>{userBData.username || 'User'}’s Info</Text>
+              <View style={styles.data}>
+                <View>
+                  <Text style={styles.detail}>Pouch Type: <Text style={styles.detailValue}>{userBData.pouchType || 'N/A'}</Text></Text>
+                  <Text style={styles.detail}>Strength: <Text style={styles.detailValue}>{userBData.strength || 'N/A'}</Text></Text>
+                </View>
+                <View>
+                  <Text style={styles.detail}>Flavors: <Text style={styles.detailValue}>{userBData.flavors || 'N/A'}</Text></Text>
+                  <Text style={styles.detail}>Notes: <Text style={styles.detailValue}>{userBData.notes || 'N/A'}</Text></Text>
+                </View>
+              </View>
             </View>
-
           </View>
           {isValidLocation(userALocation) && isValidLocation(userBLocation) && (
             <MapView
-            style={styles.map}
-            initialRegion={{
-              latitude: (userALocation.latitude + userBLocation.latitude + nicAssistLat) / 3,
-              longitude: (userALocation.longitude + userBLocation.longitude + nicAssistLng) / 3,
-              latitudeDelta: 0.003,
-              longitudeDelta: 0.003,
-            }}
-          >
-            {userALocation.latitude && userALocation.longitude && (
+              style={styles.map}
+              initialRegion={{
+                latitude: (userALocation.latitude + userBLocation.latitude + nicAssistLat) / 3,
+                longitude: (userALocation.longitude + userBLocation.longitude + nicAssistLng) / 3,
+                latitudeDelta: 0.003,
+                longitudeDelta: 0.003,
+              }}
+            >
+              {userALocation.latitude && userALocation.longitude && (
+                <Marker
+                  key="userA"
+                  coordinate={userALocation}
+                  title={`${userAData?.username || 'User A'}'s Location`}
+                >
+                  {userAData?.photoURL ? (
+                    <Image
+                      source={{ uri: userAData.photoURL }}
+                      style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: 'white' }}
+                    />
+                  ) : (
+                    <View
+                      style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#60a8b8', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white' }}
+                    >
+                      <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 18 }}>
+                        {userAData?.username ? userAData.username[0].toUpperCase() : 'U'}
+                      </Text>
+                    </View>
+                  )}
+                </Marker>
+              )}
+              {userBLocation.latitude && userBLocation.longitude && (
+                <Marker
+                  key="userB"
+                  coordinate={userBLocation}
+                  title={`${userBData?.username || 'User B'}'s Location`}
+                >
+                  {userBData?.photoURL ? (
+                    <Image
+                      source={{ uri: userBData.photoURL }}
+                      style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: 'white' }}
+                    />
+                  ) : (
+                    <View
+                      style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#60a8b8', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white' }}
+                    >
+                      <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 18 }}>
+                        {userBData?.username ? userBData.username[0].toUpperCase() : 'U'}
+                      </Text>
+                    </View>
+                  )}
+                </Marker>
+              )}
               <Marker
-                key="userA"
-                coordinate={userALocation}
-                title={`${userAData?.username || 'User A'}'s Location`}
-              >
-                {userAData?.photoURL ? (
-                  <Image
-                    source={{ uri: userAData.photoURL }}
-                    style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: 'white' }}
-                  />
-                ) : (
-                  <View
-                    style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#60a8b8', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white' }}
-                  >
-                    <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 18 }}>
-                      {userAData?.username ? userAData.username[0].toUpperCase() : 'U'}
-                    </Text>
-                  </View>
-                )}
-              </Marker>
-            )}
-            {userBLocation.latitude && userBLocation.longitude && (
-              <Marker
-                key="userB"
-                coordinate={userBLocation}
-                title={`${userBData?.username || 'User B'}'s Location`}
-              >
-                {userBData?.photoURL ? (
-                  <Image
-                    source={{ uri: userBData.photoURL }}
-                    style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: 'white' }}
-                  />
-                ) : (
-                  <View
-                    style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#60a8b8', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white' }}
-                  >
-                    <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 18 }}>
-                      {userBData?.username ? userBData.username[0].toUpperCase() : 'U'}
-                    </Text>
-                  </View>
-                )}
-              </Marker>
-            )}
-            <Marker
-              key="nicAssist"
-              coordinate={{ latitude: nicAssistLat, longitude: nicAssistLng }}
-              title="Assist Location"
-              pinColor="#60a8b8"
-            />
-          </MapView>
+                key="nicAssist"
+                coordinate={{ latitude: nicAssistLat, longitude: nicAssistLng }}
+                title="Assist Location"
+                pinColor="#60a8b8"
+              />
+            </MapView>
           )}
-          
         </View>
       )}
       <TouchableOpacity style={styles.bottomButton} onPress={handleCancel}>
@@ -903,7 +889,6 @@ const handleAlertOk = async () => {
             <Text style={styles.ratingModalTitle}>
               {currentUserId === userAId ? 'How was your NicMeUp?' : 'How was your Assist?'}
             </Text>
-
             {(!isUserA ? userAData?.photoURL : userBData?.photoURL) ? (
               <View style={styles.ratingOuterZynBorder}>
                 <View style={styles.ratingInnerWhiteBorder}>
@@ -921,7 +906,6 @@ const handleAlertOk = async () => {
                 </Text>
               </View>
             )}
-
             <View style={{ marginVertical: 20, width: '100%', alignItems: 'center' }}>
               <AirbnbRating
                 count={5}
@@ -930,8 +914,7 @@ const handleAlertOk = async () => {
                 showRating={false}
                 onFinishRating={(rating) => setRating(rating)}
               />
-            </View>  
-
+            </View>
             <View style={styles.ratingButtonContainer}>
               <TouchableOpacity
                 style={styles.ratingButtonDecline}
@@ -942,7 +925,6 @@ const handleAlertOk = async () => {
               >
                 <Text style={styles.ratingButtonText}>Cancel</Text>
               </TouchableOpacity>
-
               <TouchableOpacity
                 style={styles.ratingButtonNicAssist}
                 onPress={async () => {
@@ -962,7 +944,7 @@ const handleAlertOk = async () => {
           </View>
         </View>
       </Modal>
-
+      {/* Chat Modal */}
       <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView behavior="padding" style={styles.modalContentContainer}>
@@ -1003,12 +985,13 @@ const handleAlertOk = async () => {
           </KeyboardAvoidingView>
         </View>
       </Modal>
+    
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#dcdcdc', paddingHorizontal: 20, paddingTop: 10 },
+  container: { flex: 1, backgroundColor: '#dcdcdc', paddingHorizontal: 20, paddingTop: 10,},
   title: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 10, color: '#60a8b8' },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 20, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, elevation: 3, marginBottom: 10 },
   usersContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -1044,9 +1027,6 @@ const styles = StyleSheet.create({
   sendButton: { backgroundColor: '#60a8b8', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, marginLeft: 10 },
   sendButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#ccc', width: '100%', alignSelf: 'stretch' },
-  completedButton: { marginTop: 12, alignSelf: 'center', width: '80%', borderRadius: 8, paddingVertical: 12, alignItems: 'center', backgroundColor: '#76BD6F', borderBottomWidth: 2, borderBottomColor: '#1C5916' },
-  completedText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  completedHeader: { fontSize: 16, fontWeight: '700', color: '#2b2b2b', marginBottom: 10, },
   ratingModalContainer: {
   flex: 1,
   justifyContent: 'center',
@@ -1110,5 +1090,48 @@ ratingButtonDecline: {
   marginHorizontal: 5,
 },
 ratingButtonText: { color: '#fff', fontSize: 16 },
+completionModalOverlay: {
+  justifyContent: 'flex-start',
+  alignItems: 'center',
+  backgroundColor: 'rgba(0, 0, 0, 0.1)',
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  right: 0,
+  zIndex: 1000, // High z-index to ensure overlay
+  pointerEvents: 'box-none', // Allows interaction with underlying UI
+},
 
+completionModalContent: { 
+  flexDirection: 'row',
+  width: '100%',
+  backgroundColor: '#fff',
+  padding: 10,  
+  elevation: 10, // Ensure it’s above other elements on Android
+  height: 105, // Adjust to match your header height (default Header is ~90px, confirm in App.js)
+  justifyContent: 'space-between',
+  alignItems: 'flex-end',
+  marginTop: -105, // Negative margin to pull it up over the header (match height)
+},
+
+completedHeader: { 
+  fontSize: 18, 
+  fontWeight: 'bold', 
+  textAlign: 'left', 
+  flex: 1,
+},
+
+completedButton: { 
+  backgroundColor: '#60B870', 
+  paddingHorizontal: 25,
+  paddingVertical: 5, 
+  borderRadius: 8,
+  marginLeft: 10,
+},
+
+completedText: { 
+  color: '#fff', 
+  fontSize: 16, 
+  fontWeight: 'bold' 
+},
 });
