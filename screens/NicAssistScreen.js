@@ -94,6 +94,8 @@ export default function NicAssistScreen() {
   const userADocRef = doc(db, 'users', userAId);
   const userADoc = useRef(null);
   const hasNavigated = useHasNavigated();
+  const mapRef = useRef(null);
+  const didFitMap = useRef(false)
 
 //UseEffect for fetching profileURL's faster
 useEffect(() => {
@@ -204,7 +206,30 @@ const submitRating = async (targetUserId, rating, sessionId) => {
     console.error("❌ Error submitting rating:", err);
   }
 };
+//-------useEffect for map view-------
 
+useEffect(() => {
+  if (
+    !didFitMap.current &&
+    mapRef.current &&
+    userALocation?.latitude &&
+    userALocation?.longitude &&
+    userBLocation?.latitude &&
+    userBLocation?.longitude
+  ) {
+    const coords = [
+      { latitude: userALocation.latitude, longitude: userALocation.longitude },
+      { latitude: userBLocation.latitude, longitude: userBLocation.longitude },
+    ];
+
+    mapRef.current.fitToCoordinates(coords, {
+      edgePadding: { top: 100, right: 100, bottom: 100, left: 100 },
+      animated: true,
+    });
+
+    didFitMap.current = true; // ✅ only run once
+  }
+}, [userALocation, userBLocation]);
 
 
 const handleCompletion = async () => {
@@ -780,58 +805,85 @@ const handleAlertOk = async () => {
           </View>
           {isValidLocation(userALocation) && isValidLocation(userBLocation) && (
             <MapView
+              ref={mapRef}
               style={styles.map}
-              initialRegion={{
-                latitude: (userALocation.latitude + userBLocation.latitude + nicAssistLat) / 3,
-                longitude: (userALocation.longitude + userBLocation.longitude + nicAssistLng) / 3,
-                latitudeDelta: 0.003,
-                longitudeDelta: 0.003,
-              }}
             >
               {userALocation.latitude && userALocation.longitude && (
                 <Marker
                   key="userA"
                   coordinate={userALocation}
-                  title={`${userAData?.username || 'User A'}'s Location`}
+                  title={`${userAData?.username || "User A"}'s Location`}
                 >
                   {userAData?.photoURL ? (
                     <Image
                       source={{ uri: userAData.photoURL }}
-                      style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: 'white' }}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        borderWidth: 2,
+                        borderColor: "white",
+                      }}
                     />
                   ) : (
                     <View
-                      style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#60a8b8', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white' }}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        backgroundColor: "#60a8b8",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        borderWidth: 2,
+                        borderColor: "white",
+                      }}
                     >
-                      <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 18 }}>
-                        {userAData?.username ? userAData.username[0].toUpperCase() : 'U'}
+                      <Text style={{ color: "white", fontWeight: "bold", fontSize: 18 }}>
+                        {userAData?.username ? userAData.username[0].toUpperCase() : "U"}
                       </Text>
                     </View>
                   )}
                 </Marker>
               )}
+
               {userBLocation.latitude && userBLocation.longitude && (
                 <Marker
                   key="userB"
                   coordinate={userBLocation}
-                  title={`${userBData?.username || 'User B'}'s Location`}
+                  title={`${userBData?.username || "Other User"}'s Location`}
                 >
                   {userBData?.photoURL ? (
                     <Image
                       source={{ uri: userBData.photoURL }}
-                      style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: 'white' }}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        borderWidth: 2,
+                        borderColor: "white",
+                      }}
                     />
                   ) : (
                     <View
-                      style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#60a8b8', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white' }}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        backgroundColor: "#60a8b8",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        borderWidth: 2,
+                        borderColor: "white",
+                      }}
                     >
-                      <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 18 }}>
-                        {userBData?.username ? userBData.username[0].toUpperCase() : 'U'}
+                      <Text style={{ color: "white", fontWeight: "bold", fontSize: 18 }}>
+                        {userBData?.username ? userBData.username[0].toUpperCase() : "U"}
                       </Text>
                     </View>
                   )}
                 </Marker>
               )}
+
               <Marker
                 key="nicAssist"
                 coordinate={{ latitude: nicAssistLat, longitude: nicAssistLng }}
