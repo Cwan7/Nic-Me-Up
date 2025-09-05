@@ -186,7 +186,6 @@ useEffect(() => {
             ratingsCount: data.ratings?.count ?? 0,
           };
           setUser(mergedUser);
-          console.log("🟢 Realtime user update:", mergedUser.username);
         }
       });
     } catch (err) {

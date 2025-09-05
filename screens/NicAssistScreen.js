@@ -614,11 +614,10 @@ useFocusEffect(
 const handleCancel = async () => {
   console.log(`❌ Canceled ${currentUserId}`);
   try {
-    const userADocRef = doc(db, 'users', userAId);
-    const userBDocRef = doc(db, 'users', userBId);
+    const currentUserRef = doc(db, 'users', currentUserId);
     const sessionRef = doc(db, 'nicSessions', sessionIdRef.current);
 
-    // 🧹 Clean up listeners safely with optional chaining
+    // 🧹 Clean up listeners safely
     unsubscribeLocationA.current?.();
     console.log(`🧹 Unsubscribed location listener for userA (${userAId}) on cancel`);
 
@@ -635,48 +634,17 @@ const handleCancel = async () => {
       heartbeatIntervalRef.current = null;
       console.log(`🧹 Cleared heartbeat interval for ${currentUserId} on cancel`);
     }
-    // Fetch latest user data
-    const userAData = (await getDoc(userADocRef)).data();
-    const userBData = (await getDoc(userBDocRef)).data();
 
-    if (isUserA) {
-      // User A cancels
-      await updateDoc(userADocRef, {
-        NicMeUp: {
-          ...userAData?.NicMeUp || {},
-          nicQuestAssistedBy: null,
-          sessionId: ""
-        }
-      }, { merge: true });
+    // 📝 Clear ONLY the current user's NicMeUp fields
+    await updateDoc(currentUserRef, {
+      NicMeUp: {
+        nicQuestAssistedBy: null,
+        nicAssistResponse: null,
+        sessionId: "",
+      }
+    });
 
-      await updateDoc(userBDocRef, {
-        NicMeUp: {
-          ...userBData?.NicMeUp || {},
-          nicAssistResponse: null,
-          sessionId: sessionIdRef.current
-        }
-      }, { merge: true });
-
-    } else {
-      // User B cancels
-      await updateDoc(userBDocRef, {
-        NicMeUp: {
-          ...userBData?.NicMeUp || {},
-          nicAssistResponse: null,
-          sessionId: ""
-        }
-      }, { merge: true });
-
-      await updateDoc(userADocRef, {
-        NicMeUp: {
-          ...userAData?.NicMeUp || {},
-          nicQuestAssistedBy: null,
-          sessionId: sessionIdRef.current
-        }
-      }, { merge: true });
-    }
-
-    // Mark the session inactive
+    // 🚨 Mark the session inactive
     await updateDoc(sessionRef, {
       active: false,
       canceledAt: new Date(),
@@ -689,6 +657,7 @@ const handleCancel = async () => {
     console.error('❌ Error cancelling NicMeUp session:', error);
   }
 };
+
 
 
 const handleAlertOk = async () => {
@@ -1123,7 +1092,7 @@ completedHeader: {
 
 completedButton: { 
   backgroundColor: '#60B870', 
-  paddingHorizontal: 25,
+  paddingHorizontal: 50,
   paddingVertical: 5, 
   borderRadius: 8,
   marginLeft: 10,
