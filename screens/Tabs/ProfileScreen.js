@@ -236,7 +236,7 @@ export default function ProfileScreen({ user, setUser }) {
                   </Text>
               </View>
             ) : (
-              <Text style={{ marginTop: 5, fontStyle: 'italic' }}>No Account Ratings</Text>
+              <Text style={{ marginTop: 5, fontStyle: 'italic', color: '#555' }}>No Account Ratings</Text>
             )}
           </View>
           <View style={styles.headerRow}>

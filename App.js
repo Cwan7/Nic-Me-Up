@@ -230,7 +230,7 @@ useEffect(() => {
           await updateDoc(doc(db, 'users', auth.currentUser.uid), {
             location: { latitude, longitude, timestamp: Date.now() },
           });
-          console.log(`📍 Updated: ${latitude}, ${longitude}`);
+          console.log(`📍 Updated App.js: ${latitude}, ${longitude}`);
         } catch (err) {
           console.error('🔥 Failed to update location:', err.message);
         }

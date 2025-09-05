@@ -268,8 +268,6 @@ export default function HomeScreen({ user }) {
             if (docSnapshot.exists() && data?.location) {
               const newLocation = data.location;
               setUserLocation(newLocation);
-              console.log(`📍 Updated: ${newLocation.latitude}, ${newLocation.longitude}`);
-
               if (mapRef.current) {
                 mapRef.current.animateToRegion({
                   latitude: newLocation.latitude,
