@@ -84,6 +84,7 @@ export const sendLocationBasedNotification = async (userName, currentUserId, oth
           userRating: userARating,
           nicAssistLat: location.latitude,
           nicAssistLng: location.longitude,
+          isGroup2: true,
         },
       };
 
@@ -368,7 +369,7 @@ const handleNicQuest = async () => {
         otherLocation?.latitude &&
         otherLocation?.longitude &&
         otherLocation?.timestamp &&
-        now - otherLocation.timestamp <= 5 * 60 * 1000
+        now - otherLocation.timestamp <= 5 * 1000
       ) {
         const distance = calculateDistance(
           userLocation.latitude,

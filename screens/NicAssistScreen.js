@@ -55,7 +55,7 @@ const isValidLocation = (loc) =>
 
 export default function NicAssistScreen() {
   const route = useRoute();
-  const { userAId, userBId, sessionId, nicAssistLat: initialNicAssistLat, nicAssistLng: initialNicAssistLng, isGroup2, userAPhoto, userBPhoto } = route.params || {};
+  const { userAId, userBId, sessionId, nicAssistLat: initialNicAssistLat, nicAssistLng: initialNicAssistLng, userAPhoto, userBPhoto } = route.params || {};
   const navigation = useNavigation();
   const sessionIdRef = useRef(sessionId);
   const [userAData, setUserAData] = useState(null);
@@ -96,7 +96,10 @@ export default function NicAssistScreen() {
   const hasNavigated = useHasNavigated();
   const mapRef = useRef(null);
   const didFitMap = useRef(false)
+  const [isGroup2, setIsGroup2] = useState(false);
 
+
+  console.log("isGroup2:", isGroup2, "nicAssistLat:", nicAssistLat, "nicAssistLng:", nicAssistLng);
 //UseEffect for fetching profileURL's faster
 useEffect(() => {
   const loadProfiles = async () => {
@@ -294,14 +297,23 @@ useEffect(() => {
 
     const data = snapshot.data();
 
+    // 🔹 Sync map-related fields
+    if (data.nicAssistLat && data.nicAssistLng) {
+      setNicAssistLat(data.nicAssistLat);
+      setNicAssistLng(data.nicAssistLng);
+    }
+    if (typeof data.isGroup2 === "boolean") {
+      setIsGroup2(data.isGroup2);
+    }
+
     // 🔹 Case: session was completed
     if (data.status === "completed") {
       console.log(`✅ Session completed by ${data.completedBy}`);
       clearInterval(intervalId);
       heartbeatIntervalRef.current = null;
-      setShowCompletionPrompt(false); // Hide completion prompt for both
-      setShowRatingModal(true); // Show rating modal for both, regardless of who completed
-      return; // Stop further processing
+      setShowCompletionPrompt(false);
+      setShowRatingModal(true);
+      return;
     }
 
     // 🔹 Case: canceled
@@ -462,9 +474,6 @@ useEffect(() => {
 }, []);
 useEffect(() => {
   if (!userAId || !userBId || !currentUserId) return;
-
-  let firstLoad = true;
-
   const init = async () => {
     try {
       if (currentUserId !== userAId && currentUserId !== userBId) return;
@@ -545,11 +554,7 @@ useEffect(() => {
           unsubscribeChat.current = onSnapshot(chatDocRef, (docSnapshot) => {
             if (docSnapshot.exists()) {
               const data = docSnapshot.data();
-              setUnreadCount(data.unreadCount?.[currentUserId] || 0);
-              if (firstLoad && data.unreadCount?.[currentUserId] > 0) {
-                updateDoc(chatDocRef, { [`unreadCount.${currentUserId}`]: 0 }, { merge: true });
-                firstLoad = false;
-              }
+              setUnreadCount(data.unreadCount?.[currentUserId] || 0);             
             }
           });
         } catch {
@@ -786,7 +791,7 @@ const handleAlertOk = async () => {
             <TouchableOpacity style={styles.chatIcon} onPress={() => setModalVisible(true)}>
               <View style={styles.iconContainer}>
                 <MaterialIcons name="chat" size={40} color="#60a8b8" />
-                {unreadCount > 0 && <MaterialIcons name="priority-high" size={20} color="white" style={styles.badge} />}
+                {unreadCount > 0 && <MaterialIcons name="priority-high" size={18} color="white" style={styles.badge} />}
               </View>
             </TouchableOpacity>
             <View style={styles.detailsContainer}>
@@ -807,7 +812,9 @@ const handleAlertOk = async () => {
             <MapView
               ref={mapRef}
               style={styles.map}
+              showsUserLocation={false} // no default blue dot
             >
+              {/* User A marker */}
               {userALocation.latitude && userALocation.longitude && (
                 <Marker
                   key="userA"
@@ -846,11 +853,12 @@ const handleAlertOk = async () => {
                 </Marker>
               )}
 
+              {/* User B marker */}
               {userBLocation.latitude && userBLocation.longitude && (
                 <Marker
                   key="userB"
                   coordinate={userBLocation}
-                  title={`${userBData?.username || "Other User"}'s Location`}
+                  title={`${userBData?.username || "User B"}'s Location`}
                 >
                   {userBData?.photoURL ? (
                     <Image
@@ -884,12 +892,15 @@ const handleAlertOk = async () => {
                 </Marker>
               )}
 
-              <Marker
-                key="nicAssist"
-                coordinate={{ latitude: nicAssistLat, longitude: nicAssistLng }}
-                title="Assist Location"
-                pinColor="#60a8b8"
-              />
+              {/* NicAssist marker — only show if NOT group2 */}
+              {Boolean(!isGroup2 && nicAssistLat && nicAssistLng) && (
+                <Marker
+                  key="nicAssist"
+                  coordinate={{ latitude: nicAssistLat, longitude: nicAssistLng }}
+                  title="Assist Location"
+                  pinColor="#60a8b8"
+                />
+              )}
             </MapView>
           )}
         </View>

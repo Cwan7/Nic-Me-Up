@@ -119,25 +119,35 @@ export default function App() {
     return termsSnap.exists() ? termsSnap.data() : null;
   }
 
-  useEffect(() => {
-    const checkTerms = async () => {
-      if (!user || !onboardingComplete) return;
-      try {
-        const termsData = await getLatestTerms();
-        if (!termsData) return;
-        setLatestTerms(termsData);
-        const userRef = doc(db, "users", user.uid);
-        const userSnap = await getDoc(userRef);
-        const userData = userSnap.data();
-        if (!userData?.termsAcceptedVersion || userData.termsAcceptedVersion !== termsData.version) {
-          setNeedsToAcceptTerms(true);
-        }
-      } catch (err) {
-        console.error("Error checking terms:", err);
+useEffect(() => {
+  let isMounted = true;
+
+  const checkTerms = async () => {
+    if (!user || !onboardingComplete) return;
+    try {
+      const termsData = await getLatestTerms();
+      if (!termsData || !isMounted) return;
+
+      setLatestTerms(termsData);
+
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+      if (!isMounted) return;
+
+      const userData = userSnap.data();
+      if (!userData?.termsAcceptedVersion || userData.termsAcceptedVersion !== termsData.version) {
+        setNeedsToAcceptTerms(true);
       }
-    };
-    checkTerms();
-  }, [user, onboardingComplete]);
+    } catch (err) {
+      if (isMounted) console.error("Error checking terms:", err);
+    }
+  };
+
+  checkTerms();
+
+  return () => { isMounted = false; };
+}, [user, onboardingComplete]);
+
 
 useEffect(() => {
   let unsubscribeUserDoc; // declare here so both paths can access
@@ -346,7 +356,7 @@ useEffect(() => {
           return;
         }
         hasNavigated.current = true;
-        navigationRef.current?.navigate('NicAssist', { userAId: notification.userId, userBId: auth.currentUser.uid, sessionId, nicAssistLat, nicAssistLng, isGroup2: notification.isGroup2 || false });
+        navigationRef.current?.navigate('NicAssist', { userAId: notification.userId, userBId: auth.currentUser.uid, sessionId, nicAssistLat, nicAssistLng, isGroup2: notification.isGroup2 = true || notification.isGroup2 === "true" });
       } catch (error) {
         console.error('Error updating Firestore for NicAssist:', error);
         Alert.alert('Error', 'Could not join NicMeUp. Try again.', [{ text: 'OK', onPress: () => setIsModalVisible(false) }]);

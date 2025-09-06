@@ -268,6 +268,7 @@ export default function ProfileScreen({ user, setUser }) {
               value={pouchType}
               onChangeText={setPouchType}
               editable={isEditing}
+              maxLength={12}
             />
             <Text style={styles.label}>Strength</Text>
             <TextInput
@@ -275,6 +276,7 @@ export default function ProfileScreen({ user, setUser }) {
               value={strength}
               onChangeText={setStrength}
               editable={isEditing}
+              maxLength={12}
             />
             <Text style={styles.label}>Flavors</Text>
             <TextInput
@@ -282,6 +284,7 @@ export default function ProfileScreen({ user, setUser }) {
               value={flavors}
               onChangeText={setFlavors}
               editable={isEditing}
+              maxLength={12}
             />
             <Text style={styles.label}>Notes</Text>
             <TextInput
@@ -289,8 +292,7 @@ export default function ProfileScreen({ user, setUser }) {
               value={notes}
               onChangeText={setNotes}
               editable={isEditing}
-              multiline={true}
-              numberOfLines={4}
+              maxLength={18}
             />
           </View>
           {isEditing && (
